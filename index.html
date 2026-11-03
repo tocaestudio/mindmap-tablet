@@ -183,7 +183,7 @@
   function erMove(e) {
     const nat = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
     for (const n of nat) {
-      if (n.pointerType === 'pen' && !(n.pressure > 0) && !P.byDown) continue;
+      if (n.pointerType === 'pen' && !(n.pressure > 0) && !P.byDown && !(P.active && P.active.sz && touchingNoPressure(n))) continue;
       const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
       const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
       for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
@@ -255,7 +255,7 @@
     const pt = e.pointerType != null ? e.pointerType : (type.startsWith('touch') ? 'touch' : type.startsWith('mouse') || type.endsWith('click') ? 'mouse*' : '-');
     const sz = e.width != null ? ` ${Math.round(e.width)}×${Math.round(e.height)}` : (e.touches ? ` dedos=${e.touches.length}` : '');
     const st = `${P.down ? 'D' : '-'}${P.armed ? 'A' : '-'}${P.hoverBtn ? 'H' : '-'}${P.active ? (P.active.eraser ? 'E' : 'I') : '-'}`;
-    const key = type + pt + e.button + '|' + e.buttons + '|' + (e.pressure > 0) + st;
+    const key = type + pt + e.button + '|' + e.buttons + '|' + (e.pressure > 0) + st + (e.width != null && e.width < 0.5 ? 'c' : 'h');
     diagPush(key, `${t} ${type.replace('pointer', '').padEnd(10)} ${String(pt).padEnd(6)} btn=${e.button != null ? e.button : '-'} btns=${e.buttons != null ? e.buttons : '-'} p=${(e.pressure || 0).toFixed(2)}${sz} [${st}]`);
   }, true));
   ['blur', 'visibilitychange'].forEach(type => window.addEventListener(type, () => { if (T.diag) diagPush(type + now(), '       (' + type + ' ' + document.visibilityState + ')'); }, true));
@@ -265,6 +265,8 @@
     screenX: e.screenX, screenY: e.screenY, pressure: type === 'pointerup' ? 0 : e.pressure, button: 0, buttons: type === 'pointerup' ? 0 : (e.buttons || 1),
     tiltX: e.tiltX, tiltY: e.tiltY, width: e.width, height: e.height, getCoalescedEvents: () => [] });
   const fakeUp = e => fakeOf(e, 'pointerup'), fakeDown = e => fakeOf(e, 'pointerdown');
+  // Tab S10 Lite (diagnóstico real): ponta na tela = width/height 0; pairando = 1×1. Com o botão apertado é o ÚNICO sinal de contato.
+  const touchingNoPressure = e => e.pointerType === 'pen' && e.width != null && e.width < 0.5 && e.height < 0.5;
 
   /* ---------- roteador de ponteiros ---------- */
   window.addEventListener('pointerdown', e => {
@@ -329,11 +331,19 @@
         if (P.hoverBtn) { P.hoverBtn = false; setFlag(); }
         return;
       }
+      if (P.active && P.active.sz) {                                 // borracha do botão em andamento (contato pelo tamanho)
+        swallow(e);
+        if (touchingNoPressure(e)) erMove(e); else { erEnd(); P.active = null; }
+        return;
+      }
       if (!P.down && !P.active) {
-        if (!(e.pressure > 0)) {                                     // pairando COM o botão apertado
+        if (!(e.pressure > 0)) {                                     // botão apertado: pairando ou ENCOSTADO (o Tab S10 Lite não manda "pressionar" nem pressão)
           if (!P.hoverBtn) { P.hoverBtn = true; setFlag(); }
           T.lastBarrelT = now();
-          if (inSvg(e.target)) swallow(e);
+          if (inSvg(e.target)) {
+            swallow(e);
+            if (touchingNoPressure(e)) { P.active = { eraser: true, sz: true }; erStart(e); }   // a ponta encostou: apaga
+          }
           return;
         }
         if (P.hoverBtn && inSvg(e.target)) {                         // encostou com o botão sem "pressionar": vira borracha
@@ -400,7 +410,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 9.8</title>
+<title>MindMap Studio — Tablet 9.9</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -9708,7 +9718,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 9.8",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 9.9",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9752,7 +9762,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 9.8 · 03/11/2026 17:40';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 9.9 · 03/11/2026 18:08';
  }
  document.body.classList.add('theme-dots');
 
@@ -13144,29 +13154,11 @@ window.runSimulatedPenTabletStroke = function() {
       cx.stroke(new Path2D(buildSmoothCenterlinePath(pts, s.tool === 'freeform')));
     } else {
       cx.fillStyle = col;
-      cx.fill(new Path2D(buildInkOutline(pts, s.size, s.tool, window.penBrushProfile || 'round')));
+      window.__inkLiveDraw = true;
+      try { cx.fill(new Path2D(buildInkOutline(pts, s.size, s.tool, window.penBrushProfile || 'round'))); } finally { window.__inkLiveDraw = false; }
     }
   }
 
-  function liveIncr() {
-    const s = ses; if (!s || !s.pts.length) return;
-    const pts = s.pts, prof = window.penBrushProfile || 'round';
-    cx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * pan.x, dpr * pan.y);
-    cx.shadowBlur = 0; cx.shadowColor = 'transparent'; cx.setLineDash([]);
-    cx.lineCap = 'round'; cx.lineJoin = 'round';
-    cx.strokeStyle = cx.fillStyle = window.penStrokeColor;
-    if (s.drawn == null) {
-      s.wl = window.inkLiveWidth(s.tool, prof, s.size, pts, 0, null);
-      cx.beginPath(); cx.arc(pts[0].x, pts[0].y, s.wl / 2, 0, Math.PI * 2); cx.fill();
-      s.drawn = 0;
-    }
-    for (let i = s.drawn + 1; i < pts.length; i++) {
-      const w = window.inkLiveWidth(s.tool, prof, s.size, pts, i, s.wl);
-      cx.lineWidth = (s.wl + w) / 2;
-      cx.beginPath(); cx.moveTo(pts[i - 1].x, pts[i - 1].y); cx.lineTo(pts[i].x, pts[i].y); cx.stroke();
-      s.wl = w; s.drawn = i;
-    }
-  }
   window.__clearLiveInk = () => clearLiveCanvas();
 
   function filterPoint(st, x, y, t) {
@@ -13381,10 +13373,8 @@ window.runSimulatedPenTabletStroke = function() {
       ortho: !!(window.penStraightLineLock || e.shiftKey),
       axis: null
     };
-    ses.incr = ['ballpoint', 'fountain', 'brush'].includes(activeTool) && effOp >= 0.99 && !ses.ortho &&
-      (window.penLineStyle || 'solid') === 'solid' && !(activeTool === 'brush' && (window.penBrushProfile || 'round') !== 'round');
     addSample(e, true);
-    if (ses.incr) liveIncr(); else renderLiveFrame();
+    renderLiveFrame();
   }, true);
 
   window.addEventListener('pointermove', ev => {
@@ -13426,7 +13416,12 @@ window.runSimulatedPenTabletStroke = function() {
     const list = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
     (list.length ? list : [ev]).forEach(c => addSample(c, false));
     ses.pred = [];
-    if (!ses.ortho && ev.getPredictedEvents && ses.tool !== 'fountain' && ses.tool !== 'brush') {
+    // ponta ao vivo = posição REAL da caneta (o filtro de suavização fica só no corpo do traço) + previsão do Chrome
+    if (!ses.ortho) {
+      const lastE = list.length ? list[list.length - 1] : ev;
+      ses.pred.push({ x: (lastE.clientX - ses.r.left - pan.x) / scale, y: (lastE.clientY - ses.r.top - pan.y) / scale, p: ses.ps, tx: lastE.tiltX || 0, ty: lastE.tiltY || 0 });
+    }
+    if (!ses.ortho && ev.getPredictedEvents) {
       ev.getPredictedEvents().slice(0, 2).forEach(pe => {
         const w = { x: (pe.clientX - ses.r.left - pan.x) / scale, y: (pe.clientY - ses.r.top - pan.y) / scale };
         ses.pred.push({ x: w.x, y: w.y, p: ses.ps, tx: pe.tiltX || 0, ty: pe.tiltY || 0 });
@@ -13437,7 +13432,7 @@ window.runSimulatedPenTabletStroke = function() {
       ses.hud = now;
       updatePenPressureHUD(ev.pointerType === 'pen' ? ev.pressure : 0, ev.pointerType, ev.tiltX || 0, ev.tiltY || 0, ev.twist || 0);
     }
-    if (ses.incr) liveIncr(); else if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
+    if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
   }, { passive: true });
 
   function finishSession(ev) {
@@ -15784,7 +15779,9 @@ async function sdxRunImport() {
     fountain: { F: pn => 0.38 + 0.92 * Math.pow(pn, 1.15), sp: 0.22, tIn: 5, tOut: 5, t0: 0.5 },
     brush:    { F: pn => 0.15 + 1.85 * Math.pow(pn, 1.35), sp: 0.42, tIn: 9, tOut: 9, t0: 0.22 }
   };
-  const pnOf = q => clamp(((q && q.p != null ? q.p : 1) - 0.22) / 1.08, 0, 1);   // mapHardwarePressure → 0..1
+  // pressão normalizada. A S Pen do Tab S10 Lite manda valores baixos (≈0,03–0,35 escrevendo normal):
+  // desfaz o mapeamento linear do app (0,25 + 0,95·p) e aplica curva suave, para a espessura variar já na escrita leve
+  const pnOf = q => { const m = (q && q.p != null) ? q.p : 1; const raw = clamp((m - 0.25) / 0.95, 0, 1); return Math.pow(raw, 0.6); };
   const usesV10 = (penType, profile) => penType === 'fountain' || (penType === 'brush' && (profile || 'round') === 'round');
   window.inkUsesV10 = usesV10;
 
@@ -15822,7 +15819,7 @@ async function sdxRunImport() {
     if (n < 2) return circle(pts[0], Math.max(0.8, rawWidth(M, size, pts, 0) / 2));
     // larguras: mesma regra do ao vivo + afinamento de saída + suavização simétrica leve
     let w = pts.map((_, i) => rawWidth(M, size, pts, i));
-    for (let i = 0; i < M.tOut && i < n; i++) { const k = n - 1 - i; w[k] *= M.t0 + (1 - M.t0) * (i / M.tOut); }
+    if (!window.__inkLiveDraw) for (let i = 0; i < M.tOut && i < n; i++) { const k = n - 1 - i; w[k] *= M.t0 + (1 - M.t0) * (i / M.tOut); }
     for (let pass = 0; pass < 2; pass++) w = w.map((v, i) => (i === 0 || i === n - 1) ? v : (w[i - 1] + 2 * v + w[i + 1]) / 4);
     const rad = w.map(v => Math.max(0.35, v / 2));
     // tangentes estáveis
@@ -15863,7 +15860,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 9.8 · 03/11/2026 17:40';
+  window.APP_BUILD = 'Tablet 9.9 · 03/11/2026 18:08';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -15925,7 +15922,7 @@ async function sdxRunImport() {
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 9.8 · 03/11/2026 17:40</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 9.9 · 03/11/2026 18:08</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · botão da S Pen + toque = menu</div>`;
   document.body.appendChild(more);
@@ -15991,7 +15988,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 9.8 · 03/11/2026 17:40</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 9.9 · 03/11/2026 18:08</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
