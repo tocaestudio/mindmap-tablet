@@ -1,0 +1,66 @@
+MINDMAP STUDIO — VERSÃO TABLET (Galaxy Tab S10 Lite · SM-X400)
+================================================================
+
+Esta pasta é o app instalável (PWA). Depois de instalado ele:
+  • abre em tela cheia, com ícone na tela inicial;
+  • funciona SEM internet (todas as bibliotecas estão dentro do index.html);
+  • aparece no menu "Compartilhar" do Android: envie um .sdocx do Samsung Notes,
+    PDF, Word, Excel, imagem ou o .json do mapa direto para o app;
+  • salva automaticamente no tablet (inclusive ao trocar de app ou bloquear a tela)
+    e oferece "Recuperar" se o app fechar antes de você salvar em arquivo.
+
+COMO INSTALAR (uma única vez)
+-----------------------------
+Um app instalável precisa estar num endereço https. O jeito gratuito mais simples:
+
+ 1. Crie uma conta em https://github.com (se ainda não tiver).
+ 2. Clique em "New repository", dê um nome (ex.: mindmap) e marque "Public".
+ 3. Na página do repositório: "Add file" → "Upload files" e envie TODOS os arquivos
+    desta pasta (index.html, sw.js, manifest.webmanifest, os 3 ícones). Clique "Commit".
+ 4. Settings → Pages → em "Branch" escolha "main" e "/ (root)" → Save.
+    Em 1–2 minutos aparece o endereço: https://SEU-USUARIO.github.io/mindmap/
+ 5. No tablet, abra esse endereço no Chrome (ou Samsung Internet) e toque em
+    ⋮ → "Instalar app" (ou "Adicionar à tela inicial").
+ Pronto: a partir daí abra pelo ícone. Não precisa mais de internet.
+
+ Atualizar no futuro: envie o novo index.html para o mesmo repositório; o app se
+ atualiza sozinho na abertura seguinte (com internet).
+
+ALTERNATIVA SEM INSTALAR
+------------------------
+Copie o arquivo "mindmap_studio_tablet_S10Lite.html" para o tablet (pasta Downloads)
+e abra pelo app "Meus Arquivos" com o Chrome ou o Samsung Internet. Funciona sem
+internet, mas não aparece no "Compartilhar" e, dependendo do navegador, o salvamento
+automático pode ficar desativado (o app avisa na barra de status). Salve com 💾.
+
+GESTOS
+------
+  1 dedo no fundo .............. move a tela
+  2 dedos ...................... zoom (pinça) e mover
+  toque longo .................. menu (no balão, no desenho ou no fundo)
+  toque duplo no balão ......... editar o texto
+  toque duplo no fundo ......... novo balão
+  S Pen ........................ escreve no modo Caneta; seleciona/arrasta no modo Seleção
+  botão lateral da S Pen + toque  menu
+  palma da mão ................. ignorada enquanto a caneta está perto ou escrevendo
+
+BARRA DO TABLET (embaixo)
+-------------------------
+  ↶ ↷  desfazer / refazer
+  Seleção · Caneta · Borracha · Mão   (a S Pen segue o modo escolhido)
+  ⇧ Somar  cada toque soma à seleção (equivale a segurar Shift)
+  ⌥ Ramo   inverte arrastar ramo inteiro / balão isolado (equivale a segurar Alt)
+  💾 salvar · ⋯ opções (dedo desenha, S Pen sempre escreve, tela cheia, recuperar)
+  ▾ recolhe a barra
+
+SAMSUNG NOTES → APP
+-------------------
+No Samsung Notes, abra a nota, use "Compartilhar" e escolha o formato de arquivo do
+Samsung Notes (.sdocx); na lista de apps, escolha "MindMap Studio". Também dá para
+salvar o .sdocx em Meus Arquivos e abrir pelo menu Arquivo do app.
+
+SALVAR EM ARQUIVO
+-----------------
+No Android não existe "gravar por cima do mesmo arquivo" a partir do navegador:
+o 💾 Salvar baixa o arquivo (.json ou .html) na pasta Downloads. O salvamento
+automático mantém seu trabalho no tablet entre uma sessão e outra.
