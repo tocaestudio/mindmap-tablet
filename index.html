@@ -133,8 +133,64 @@
   window.addEventListener('dblclick', e => { if (e.isTrusted && now() - T.lastSynthDbl < 600) swallow(e); }, true);
   window.addEventListener('contextmenu', e => {
     if (!e.isTrusted) return;
-    if (T.owned.size || now() - T.lastSynthCtx < 900 || now() - (T.lastTouchT || -1e9) < 900) swallow(e);   // toque longo do Android: tratamos nós mesmos
+    if (T.owned.size || now() - T.lastSynthCtx < 900 || now() - (T.lastTouchT || -1e9) < 900 || now() - (T.lastBarrelT || -1e9) < 900 || P.active) swallow(e);   // toque longo do Android: tratamos nós mesmos
   }, true);
+
+
+  /* ---------- S Pen: botão lateral = BORRACHA instantânea (como no Samsung Notes) ----------
+     Nos modos Caneta/Borracha, os traços da S Pen são montados aqui a partir do CONTATO da ponta e do
+     estado do botão, independentemente de como o aparelho relata o botão (pressionado antes de encostar,
+     depois de encostar ou só durante o contato). Segurou o botão: o traço vira borracha na hora; soltou:
+     volta a ser caneta (inclusive no meio do traço). O app recebe traços normais de caneta ou de
+     "ponta borracha" (button 5 / buttons 32), que ele já sabia apagar. */
+  const P = T.pen = { active: null };
+  const shieldOn = () => { const sh = document.getElementById('tabInkShield'); return !!sh && getComputedStyle(sh).display !== 'none'; };
+  const penRouting = () => inkMode() && shieldOn();
+  function mkPen(type, src, eraser) {
+    const up = type === 'pointerup' || type === 'pointercancel';
+    const ev = new PointerEvent(type, {
+      bubbles: true, cancelable: type !== 'pointercancel', composed: true, view: window,
+      pointerId: src.pointerId, pointerType: 'pen', isPrimary: true,
+      clientX: src.clientX, clientY: src.clientY, screenX: src.screenX, screenY: src.screenY,
+      pressure: up ? 0 : (src.pressure > 0 ? src.pressure : 0.5),
+      tiltX: src.tiltX || 0, tiltY: src.tiltY || 0, twist: src.twist || 0, width: src.width || 1, height: src.height || 1,
+      button: type === 'pointermove' ? -1 : (eraser ? 5 : 0), buttons: up ? 0 : (eraser ? 32 : 1)
+    });
+    ev.__tabSynth = true;
+    return ev;
+  }
+  function emit(type, src, eraser) {
+    const sh = document.getElementById('tabInkShield') || svgEl();
+    if (type === 'pointermove') {
+      const nat = (typeof src.getCoalescedEvents === 'function' && src.getCoalescedEvents().length) ? src.getCoalescedEvents() : [src];
+      const list = nat.map(n => mkPen('pointermove', n, eraser));
+      const pred = (typeof src.getPredictedEvents === 'function') ? src.getPredictedEvents().map(n => mkPen('pointermove', n, eraser)) : [];
+      const ev = mkPen('pointermove', src, eraser);
+      Object.defineProperty(ev, 'getCoalescedEvents', { value: () => list });
+      Object.defineProperty(ev, 'getPredictedEvents', { value: () => pred });
+      sh.dispatchEvent(ev);
+    } else sh.dispatchEvent(mkPen(type, src, eraser));
+  }
+  function penRoute(e, cancelled) {
+    const isEnd = cancelled || e.type === 'pointerup';
+    const barrel = (e.buttons & 2) === 2 || (e.type === 'pointerdown' && e.button === 2);
+    const eraserEnd = (e.buttons & 32) === 32 || (e.type === 'pointerdown' && e.button === 5);
+    const contact = !isEnd && ((e.buttons & 1) === 1 || eraserEnd || (barrel && e.pressure > 0));
+    const wantEraser = barrel || eraserEnd;
+    if (wantEraser) T.lastBarrelT = now();
+    const A = P.active;
+    if (A && !contact) { emit(cancelled ? 'pointercancel' : 'pointerup', e, A.eraser); P.active = null; T.setEraseFlag && T.setEraseFlag(false); return; }
+    if (!A && contact) { P.active = { eraser: wantEraser }; T.setEraseFlag && T.setEraseFlag(wantEraser); emit('pointerdown', e, wantEraser); return; }
+    if (A && contact) {
+      if (wantEraser !== A.eraser) {                                  // botão apertado/solto no meio do traço: troca na hora
+        emit('pointerup', e, A.eraser);
+        P.active = { eraser: wantEraser }; T.setEraseFlag && T.setEraseFlag(wantEraser);
+        emit('pointerdown', e, wantEraser);
+        return;
+      }
+      emit('pointermove', e, A.eraser);
+    }
+  }
 
   /* ---------- roteador de ponteiros ---------- */
   window.addEventListener('pointerdown', e => {
@@ -143,7 +199,9 @@
       T.penDown = true; T.lastPenT = now();
       if (T.gesture && T.gesture.kind === 'pan') { T.cancelGesture(); }          // palma arrastou a tela antes da caneta: desfaz
       T.owned.forEach((p, id) => synthCancel(id)); T.owned.clear();
-      // botão lateral da S Pen (ou botão direito) + toque = menu de contexto
+      // modo Caneta/Borracha: o traço é montado pelo roteador (botão lateral = borracha)
+      if (P.active || (penRouting() && inSvg(e.target))) { swallow(e); penRoute(e, false); return; }
+      // outros modos: botão lateral da S Pen (ou botão direito) + toque = menu de contexto
       if (inSvg(e.target) && (e.button === 2 || (e.buttons & 2))) {
         swallow(e); T.penCtx = e.pointerId;
         fireContext(e.clientX, e.clientY);
@@ -193,7 +251,8 @@
     if (e.__tabSynth) return;
     if (e.pointerType === 'pen') {
       T.lastPenT = now();                                           // caneta pairando conta como "caneta perto"
-      if (T.penCtx === e.pointerId) swallow(e);
+      if (T.penCtx === e.pointerId) { swallow(e); return; }
+      if (P.active || (penRouting() && inSvg(e.target) && ((e.buttons & 33) || ((e.buttons & 2) && e.pressure > 0)))) { swallow(e); penRoute(e, false); }
       return;
     }
     const p = T.owned.get(e.pointerId);
@@ -211,7 +270,10 @@
     if (e.pointerType === 'pen') {
       T.penDown = false; T.lastPenT = now();
       if (T.penCtx === e.pointerId) { swallow(e); T.penCtx = null; return; }
-      if (!cancelled && T.penTap) trackTap(e, T.penTap.t, T.penTap.x, T.penTap.y);
+      if (P.active) { swallow(e); penRoute(e, cancelled); T.penTap = null; return; }
+      if (penRouting() && inSvg(e.target)) { swallow(e); T.penTap = null; return; }   // soltou o botão pairando: nada a fazer
+      // toque duplo com a caneta só fora do modo Caneta (escrever ".." sobre um balão não abre o editor)
+      if (!cancelled && T.penTap && !inkMode()) trackTap(e, T.penTap.t, T.penTap.x, T.penTap.y);
       T.penTap = null;
       return;
     }
@@ -2507,6 +2569,10 @@ body.theme-dark #tabMore button { background: #334155; color: #e2e8f0; border-co
 body.theme-dark #tabMore label { color: #e2e8f0; }
 /* retrato / telas estreitas: barra à esquerda para não cobrir o minimapa */
 @media (max-width: 1000px) { #tabDock, #tabDockShow, #tabMore { left: 12px; transform: none; } #tabMore { bottom: 136px; } }
+/* Nada à frente da caneta ao escrever (o círculo só aparece no modo Borracha, para mostrar o tamanho) */
+body.tab:not(.tab-erase-mode) #penCursor { display: none !important; }
+/* apagando com o botão da S Pen: o botão Borracha da barra acende enquanto o botão estiver apertado */
+body.tab.tab-pen-erasing #tabDock [data-mode="eraser"] { background: #fee2e2; border-color: #ef4444; }
 
 </style>
 </head>
@@ -15641,6 +15707,7 @@ async function sdxRunImport() {
     syncDock();
   };
   function syncDock() {
+    try { syncEraseMode(); } catch (_) {}
     const m = canvasToolMode === 'draw' ? (window.penSubTool === 'eraser' ? 'eraser' : 'pen') : canvasToolMode;
     dock.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
     dock.querySelector('[data-mod="shift"]').classList.toggle('on', T.vShift);
@@ -15650,6 +15717,9 @@ async function sdxRunImport() {
     dock.querySelector('[data-act="redo"]').disabled = typeof redoStack !== 'undefined' && !redoStack.length;
   }
   T.syncDock = syncDock;
+  // Círculo sob a ponta: só no modo Borracha (mostra o tamanho da área apagada). Escrevendo, nada à frente da caneta.
+  const syncEraseMode = () => document.body.classList.toggle('tab-erase-mode', canvasToolMode === 'draw' && window.penSubTool === 'eraser');
+  T.setEraseFlag = on => { document.body.classList.toggle('tab-pen-erasing', !!on); };
   dock.addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.mode) return setMode(b.dataset.mode);
