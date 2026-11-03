@@ -1,9 +1,10 @@
 /* Service worker do MindMap Studio (tablet): app disponível sem internet + receber arquivos do "Compartilhar". */
-const VER = 'mm-tablet-v97';
+const VER = 'mm-tablet-v98';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VER).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' = baixa do site de verdade (não do cache do navegador), senão a versão nova podia nascer com o arquivo velho
+  e.waitUntil(caches.open(VER).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VER && k !== 'mm-shared').map(k => caches.delete(k))))
@@ -29,12 +30,24 @@ self.addEventListener('fetch', e => {
     return;
   }
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
-  // Primeiro do aparelho (abre na hora, sem internet); atualiza em segundo plano para a próxima abertura
+  // verificação de versão: sempre direto do site
+  if (url.searchParams.has('nocache') || e.request.cache === 'no-store') return;
   e.respondWith((async () => {
     const c = await caches.open(VER);
-    const key = e.request.mode === 'navigate' ? './index.html' : e.request;
+    const nav = e.request.mode === 'navigate' || url.pathname.endsWith('/index.html') || url.pathname.endsWith('/');
+    const key = nav ? './index.html' : e.request;
+    const fresh = () => fetch(nav ? new Request('./index.html', { cache: 'no-cache' }) : new Request(e.request, { cache: 'no-cache' }))
+      .then(r => { if (r && r.ok) c.put(key, r.clone()); return r; });
+    if (nav) {
+      // app: primeiro o site (versão mais nova); sem internet ou demorando > 3,5 s, abre a cópia do aparelho
+      const hit = await c.match(key);
+      const net = fresh().catch(() => null);
+      const timeout = new Promise(res => setTimeout(() => res(null), hit ? 3500 : 15000));
+      const r = await Promise.race([net, timeout]);
+      return (r && r.ok) ? r : (hit || (await net) || new Response('Sem conexão', { status: 503 }));
+    }
     const hit = await c.match(key, { ignoreSearch: true });
-    const net = fetch(e.request).then(r => { if (r && r.ok) c.put(key, r.clone()); return r; }).catch(() => null);
+    const net = fresh().catch(() => null);
     return hit || (await net) || new Response('Sem conexão', { status: 503 });
   })());
 });

@@ -145,7 +145,7 @@
        • ponta encosta (pressão > 0)  → começa o traço: tinta, ou borracha se armada
        • pressão volta a 0 (ponta levantou)  → o traço termina — nunca mais escreve no ar
      O app recebe traços comuns de caneta ou de "ponta borracha" (button 5 / buttons 32). */
-  const P = T.pen = { active: null, down: false, armed: false, armSrc: null };
+  const P = T.pen = { active: null, down: false, armed: false, armSrc: null, hoverBtn: false, byDown: false };
   const shieldOn = () => { const sh = document.getElementById('tabInkShield'); return !!sh && getComputedStyle(sh).display !== 'none'; };
   const penRouting = () => inkMode() && shieldOn();
   const fromPen = e => e.pointerType === 'pen' || (e.pointerType === 'mouse' && now() - T.lastPenT < 2000);   // S Pen convertida em "mouse"
@@ -174,7 +174,7 @@
       sh.dispatchEvent(ev);
     } else sh.dispatchEvent(mkPen(type, src, eraser));
   }
-  const setFlag = () => { if (T.setEraseFlag) T.setEraseFlag(P.armed); };
+  const setFlag = () => { if (T.setEraseFlag) T.setEraseFlag(P.armed || P.hoverBtn); };
   // borracha do botão: apaga direto pela geometria (funciona em qualquer modo), com um passo de desfazer por traço
   const ER = { snap: null, any: false, last: null };
   const erRadius = () => Math.max(3, (window.penEraserSize || 24) / (2 * scale));
@@ -183,7 +183,7 @@
   function erMove(e) {
     const nat = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
     for (const n of nat) {
-      if (n.pointerType === 'pen' && !(n.pressure > 0)) continue;
+      if (n.pointerType === 'pen' && !(n.pressure > 0) && !P.byDown) continue;
       const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
       const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
       for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
@@ -207,10 +207,18 @@
     const isMouse = e.pointerType === 'mouse';
     const bits = (e.buttons & 2) === 2 || (e.buttons & 32) === 32 || (e.type === 'pointerdown' && (e.button === 2 || e.button === 5));
     // contato físico = pressão > 0 (evento convertido em "mouse" não traz pressão: vale enquanto pressionado)
-    const contact = !isEnd && e.buttons !== 0 && (isMouse ? true : e.pressure > 0);
     if (e.type === 'pointerdown') {
-      P.down = true;
-      if (bits || isMouse || !(e.pressure > 0)) { P.armed = true; P.armSrc = bits ? 'bits' : 'down'; T.lastBarrelT = now(); }
+      P.down = true; P.byDown = false;
+      if (P.hoverBtn) {
+        // botão já estava apertado PAIRANDO (o aparelho avisa com buttons=1 sem "pressionar"): este "pressionar" é a ponta
+        // encostando com o botão apertado — mesmo que a pressão venha 0
+        P.armed = true; P.armSrc = 'hover'; P.byDown = true; T.lastBarrelT = now();
+      } else if (bits || isMouse || !(e.pressure > 0)) { P.armed = true; P.armSrc = bits ? 'bits' : 'down'; T.lastBarrelT = now(); }
+    }
+    // contato físico = pressão > 0 (evento convertido em "mouse" não traz pressão: vale enquanto pressionado);
+    // com o botão apertado alguns aparelhos mandam pressão 0 mesmo encostando: aí vale o "pressionar" (byDown)
+    const contact = !isEnd && e.buttons !== 0 && (isMouse || e.pressure > 0 || P.byDown);
+    if (e.type === 'pointerdown') {
     } else if (!isEnd) {
       if (bits) { if (!P.armed) { P.armed = true; P.armSrc = 'bits'; } T.lastBarrelT = now(); }
       else if (P.armed && P.armSrc === 'bits') { P.armed = false; P.armSrc = null; }      // soltou o botão no meio do traço
@@ -225,20 +233,38 @@
         if (wantEraser || canInk) strokeStart(e, wantEraser);
       } else strokeMove(e);
     }
-    if (isEnd) { if (P.active) strokeEnd(e, cancelled); P.down = false; P.armed = false; P.armSrc = null; setFlag(); }
+    if (isEnd) { if (P.active) strokeEnd(e, cancelled); P.down = false; P.armed = false; P.armSrc = null; P.byDown = false; P.hoverBtn = false; setFlag(); }
   }
 
   /* ---------- diagnóstico da S Pen (menu ⋯): registra os eventos crus que o aparelho envia ---------- */
   T.diagLog = [];
-  let lastLogKey = '', lastLogT = 0;
-  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'contextmenu'].forEach(type => window.addEventListener(type, e => {
-    if (!T.diag || e.__tabSynth || (e.pointerType === 'touch')) return;
-    const key = type + e.pointerType + e.button + '|' + e.buttons + '|' + (e.pressure > 0);
-    if (type === 'pointermove' && key === lastLogKey && now() - lastLogT < 250) return;
-    lastLogKey = key; lastLogT = now();
-    T.diagLog.push(`${type.replace('pointer', '').padEnd(11)} ${String(e.pointerType || '-').padEnd(5)} btn=${e.button} btns=${e.buttons} p=${(e.pressure || 0).toFixed(2)}`);
-    if (T.diagLog.length > 16) T.diagLog.shift();
+  let lastLogKey = '', lastLogIdx = -1, lastLogRep = 0, diagT0 = 0;
+  const diagPush = (key, line) => {
+    if (key === lastLogKey && lastLogIdx === T.diagLog.length - 1) { lastLogRep++; T.diagLog[lastLogIdx] = line + '  ×' + (lastLogRep + 1); return; }
+    T.diagLog.push(line); lastLogKey = key; lastLogIdx = T.diagLog.length - 1; lastLogRep = 0;
+    if (T.diagLog.length > 60) { T.diagLog.shift(); lastLogIdx--; }
+    T.diagDirty = true;
+  };
+  T.diagMark = txt => diagPush('mark' + now(), '──── ' + txt + ' ────');
+  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'contextmenu', 'lostpointercapture', 'pointerleave',
+   'selectstart', 'dragstart', 'touchstart', 'touchend', 'touchcancel', 'mousedown', 'mouseup', 'auxclick', 'click'].forEach(type => window.addEventListener(type, e => {
+    if (!T.diag || e.__tabSynth || !e.isTrusted) return;
+    if (type === 'pointerleave' && e.target !== document.documentElement && e.target !== window) return;
+    if (!diagT0) diagT0 = now();
+    const t = String(Math.round(now() - diagT0)).padStart(6);
+    const pt = e.pointerType != null ? e.pointerType : (type.startsWith('touch') ? 'touch' : type.startsWith('mouse') || type.endsWith('click') ? 'mouse*' : '-');
+    const sz = e.width != null ? ` ${Math.round(e.width)}×${Math.round(e.height)}` : (e.touches ? ` dedos=${e.touches.length}` : '');
+    const st = `${P.down ? 'D' : '-'}${P.armed ? 'A' : '-'}${P.hoverBtn ? 'H' : '-'}${P.active ? (P.active.eraser ? 'E' : 'I') : '-'}`;
+    const key = type + pt + e.button + '|' + e.buttons + '|' + (e.pressure > 0) + st;
+    diagPush(key, `${t} ${type.replace('pointer', '').padEnd(10)} ${String(pt).padEnd(6)} btn=${e.button != null ? e.button : '-'} btns=${e.buttons != null ? e.buttons : '-'} p=${(e.pressure || 0).toFixed(2)}${sz} [${st}]`);
   }, true));
+  ['blur', 'visibilitychange'].forEach(type => window.addEventListener(type, () => { if (T.diag) diagPush(type + now(), '       (' + type + ' ' + document.visibilityState + ')'); }, true));
+
+  // eventos "de mentira" só para a máquina de estados (não são despachados)
+  const fakeOf = (e, type) => ({ type, pointerType: e.pointerType, pointerId: e.pointerId, clientX: e.clientX, clientY: e.clientY,
+    screenX: e.screenX, screenY: e.screenY, pressure: type === 'pointerup' ? 0 : e.pressure, button: 0, buttons: type === 'pointerup' ? 0 : (e.buttons || 1),
+    tiltX: e.tiltX, tiltY: e.tiltY, width: e.width, height: e.height, getCoalescedEvents: () => [] });
+  const fakeUp = e => fakeOf(e, 'pointerup'), fakeDown = e => fakeOf(e, 'pointerdown');
 
   /* ---------- roteador de ponteiros ---------- */
   window.addEventListener('pointerdown', e => {
@@ -249,7 +275,7 @@
       T.owned.forEach((p, id) => synthCancel(id)); T.owned.clear();
       // modo Caneta/Borracha: o traço é montado pelo roteador. Em QUALQUER modo, o botão da S Pen = borracha
       // (sinais do botão: indicador de botão/borracha ou "pressionou" sem pressão, isto é, no ar)
-      const btnSig = (e.button === 2 || e.button === 5 || (e.buttons & 34) !== 0 || !(e.pressure > 0));
+      const btnSig = P.hoverBtn || now() - (T.lastBarrelT || -1e9) < 250 || e.button === 2 || e.button === 5 || (e.buttons & 34) !== 0 || !(e.pressure > 0);
       if (P.down || P.active || (inSvg(e.target) && (penRouting() || btnSig))) { swallow(e); penRoute(e, false); return; }
       T.penTap = { t: now(), x: e.clientX, y: e.clientY };
       return;
@@ -297,7 +323,24 @@
     if (e.pointerType === 'pen') {
       T.lastPenT = now();                                           // caneta pairando conta como "caneta perto"
       if (T.penCtx === e.pointerId) { swallow(e); return; }
-      if (P.down || P.active || (penRouting() && inSvg(e.target) && e.buttons !== 0)) { swallow(e); penRoute(e, false); }
+      if (e.buttons === 0) {
+        // pairando sem botão. Se ficou um "pressionar" sem "soltar" (acontece com o botão da S Pen), encerra aqui
+        if (P.down || P.active) { swallow(e); penRoute(Object.assign(fakeUp(e)), false); }
+        if (P.hoverBtn) { P.hoverBtn = false; setFlag(); }
+        return;
+      }
+      if (!P.down && !P.active) {
+        if (!(e.pressure > 0)) {                                     // pairando COM o botão apertado
+          if (!P.hoverBtn) { P.hoverBtn = true; setFlag(); }
+          T.lastBarrelT = now();
+          if (inSvg(e.target)) swallow(e);
+          return;
+        }
+        if (P.hoverBtn && inSvg(e.target)) {                         // encostou com o botão sem "pressionar": vira borracha
+          swallow(e); penRoute(fakeDown(e), false); penRoute(e, false); return;
+        }
+      }
+      if (P.down || P.active || (penRouting() && inSvg(e.target))) { swallow(e); penRoute(e, false); }
       return;
     }
     if (e.pointerType === 'mouse' && (P.down || P.active)) { swallow(e); penRoute(e, false); return; }
@@ -357,7 +400,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet</title>
+<title>MindMap Studio — Tablet 9.8</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2630,6 +2673,19 @@ body.tab.tab-pen-erasing #tabDock [data-mode="eraser"] { background: #fee2e2; bo
 #tabMore .tm-ver { font-size: 12.5px; color: #334155; padding: 2px 2px 0; }
 #tabRecover button { color: #92400e; }
 #tabRecover button[data-r="1"] { color: #fff; }
+/* barra de mensagens no centro, embaixo (sem cobrir zoom nem minimapa) */
+body.tab #status { left: 50% !important; transform: translateX(-50%); max-width: min(640px, calc(100vw - 560px)) !important; text-align: center; font-size: 12.5px !important; }
+@media (max-width: 1000px) { body.tab #status { left: auto !important; right: 12px !important; transform: none; max-width: calc(100vw - 330px) !important; } }
+#tabUpdate { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 61; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  padding: 10px 14px; border-radius: 12px; background: #eff6ff; border: 1px solid #2563eb; box-shadow: 0 10px 30px rgba(0,0,0,.18); font-size: 14px; color: #0f172a; max-width: calc(100vw - 24px); }
+#tabUpdate button { min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #2563eb; background: #fff; color: #1d4ed8; font-weight: 600; }
+#tabUpdate button[data-u="1"] { background: #2563eb; color: #fff; }
+#tabDiag { top: 80px; width: min(560px, calc(100vw - 24px)); }
+#tabDiag .dg-head { flex-wrap: wrap; gap: 6px; }
+#tabDiag .dg-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+#tabDiag .dg-head button { min-height: 38px; padding: 0 10px; }
+#tabDiag .dg-ver { color: #93c5fd; font-family: system-ui, sans-serif; margin-bottom: 4px; }
+#tabDiag pre { max-height: 46vh; overflow: auto; font-size: 11px; }
 
 </style>
 </head>
@@ -9652,7 +9708,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio Pro v5.0</b>",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 9.8",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9696,7 +9752,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio Pro v5.0! Carregue seu JSON ou edite este mapa.';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 9.8 · 03/11/2026 17:40';
  }
  document.body.classList.add('theme-dots');
 
@@ -15807,10 +15863,11 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 9.7 · 03/11/2026 16:40';
+  window.APP_BUILD = 'Tablet 9.8 · 03/11/2026 17:40';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
-  setTimeout(() => { try { status.textContent = '✅ MindMap Studio ' + window.APP_BUILD + ' carregado.'; } catch (_) {} }, 600);
+  try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
+  setTimeout(() => { try { status.textContent = '✨ Bem-vindo ao MindMap Studio — ' + window.APP_BUILD; } catch (_) {} }, 300);
   const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
   if (standalone) document.body.classList.add('tab-standalone');
 
@@ -15868,7 +15925,8 @@ async function sdxRunImport() {
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 9.7 · 03/11/2026 16:40</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 9.8 · 03/11/2026 17:40</b></div>
+    <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · botão da S Pen + toque = menu</div>`;
   document.body.appendChild(more);
   $('tabFinger').checked = T.fingerDraws;
@@ -15918,6 +15976,7 @@ async function sdxRunImport() {
     else if (a === 'full') { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); }
     else if (a === 'recover') recoverAutosave(true);
     else if (a === 'diag') toggleDiag();
+    else if (a === 'update') checkUpdate(true);
     more.classList.remove('open');
   });
   ['setCanvasToolMode', 'setPenSubTool', 'undo', 'redo', 'saveState'].forEach(fn => {
@@ -15929,23 +15988,53 @@ async function sdxRunImport() {
   /* ---------- painel de diagnóstico da S Pen ---------- */
   const diagBox = document.createElement('div');
   diagBox.id = 'tabDiag';
-  diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><button type="button">Fechar</button></div><div class="dg-state"></div><pre></pre><div class="dg-tip">Teste: paire sem encostar · aperte o botão no ar · encoste com o botão apertado · levante · solte o botão. Depois tire um print desta caixa.</div>';
+  diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
+    '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
+    '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
+    '<div class="dg-ver">Versão: Tablet 9.8 · 03/11/2026 17:40</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
+    '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
+    '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
+    '<b>C</b> encoste primeiro, depois aperte o botão e continue riscando.<br>Depois toque em <b>📋 Copiar</b> e cole o texto na conversa (ou tire um print).</div>';
   document.body.appendChild(diagBox);
-  let diagTimer = 0;
+  let diagTimer = 0, diagMarks = 0;
+  const diagText = () => 'MindMap ' + window.APP_BUILD + '\n' + navigator.userAgent + '\n' + T.diagLog.join('\n');
   function toggleDiag(force) {
     T.diag = force != null ? force : !T.diag;
     diagBox.style.display = T.diag ? 'block' : 'none';
     clearInterval(diagTimer);
     if (T.diag) {
-      T.diagLog.length = 0;
+      T.diagLog.length = 0; diagMarks = 0;
       diagTimer = setInterval(() => {
         const P = T.pen || {};
-        diagBox.querySelector('.dg-state').textContent = `modo: ${canvasToolMode}${canvasToolMode === 'draw' ? '/' + window.penSubTool : ''} · borracha armada: ${P.armed ? 'SIM' : 'não'} · traço ativo: ${P.active ? (P.active.eraser ? 'BORRACHA' : 'tinta') : '—'}`;
-        diagBox.querySelector('pre').textContent = T.diagLog.join('\n') || '(sem eventos ainda — use a S Pen sobre o mapa)';
-      }, 200);
+        diagBox.querySelector('.dg-state').textContent = `modo: ${canvasToolMode}${canvasToolMode === 'draw' ? '/' + window.penSubTool : ''} · botão no ar: ${P.hoverBtn ? 'SIM' : 'não'} · borracha armada: ${P.armed ? 'SIM' : 'não'} · traço: ${P.active ? (P.active.eraser ? 'BORRACHA' : 'tinta') : '—'}`;
+        if (!T.diagDirty) return;
+        T.diagDirty = false;
+        const pre = diagBox.querySelector('pre');
+        pre.textContent = T.diagLog.join('\n') || '(sem eventos ainda — use a S Pen sobre o mapa)';
+        pre.scrollTop = pre.scrollHeight;
+      }, 150);
     }
   }
-  diagBox.querySelector('button').onclick = () => toggleDiag(false);
+  diagBox.querySelector('.dg-btns').addEventListener('click', ev => {
+    const d = ev.target.closest('button') && ev.target.closest('button').dataset.d;
+    if (d === 'close') toggleDiag(false);
+    else if (d === 'clear') { T.diagLog.length = 0; T.diagDirty = true; diagMarks = 0; }
+    else if (d === 'mark') T.diagMark('teste ' + String.fromCharCode(65 + (diagMarks++ % 26)) + ' acima');
+    else if (d === 'copy') {
+      const txt = diagText();
+      const ok = () => { status.textContent = '📋 Diagnóstico copiado — cole na conversa.'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => fallbackCopy(txt));
+      else fallbackCopy(txt);
+    }
+  });
+  function fallbackCopy(txt) {
+    const ta = document.createElement('textarea'); ta.value = txt; ta.style.cssText = 'position:fixed;left:0;top:0;width:90vw;height:40vh;z-index:99';
+    document.body.appendChild(ta); ta.select();
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+    if (ok) { ta.remove(); status.textContent = '📋 Diagnóstico copiado — cole na conversa.'; }
+    else { status.textContent = 'Selecione o texto e copie manualmente.'; setTimeout(() => ta.remove(), 30000); }
+  }
   T.toggleDiag = toggleDiag;
 
   /* ---------- salvamento automático no tablet (IndexedDB: sem o limite de ~5 MB do localStorage) ----------
@@ -16099,9 +16188,47 @@ async function sdxRunImport() {
     try { history.replaceState({ mmTab: 1 }, '', location.pathname); } catch (_) {}
   }
   setTimeout(takeShared, 1500);
-  if ('serviceWorker' in navigator && /^https?:/.test(location.protocol) && window.__MM_PWA__) {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW', err));
+  /* ---------- atualização: confere se há versão nova no site (sem depender do cache do app) ---------- */
+  const isWeb = /^https?:/.test(location.protocol);
+  let swReg = null, lastCheck = 0, updBar = null;
+  if ('serviceWorker' in navigator && isWeb && window.__MM_PWA__) {
+    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(r => { swReg = r; }).catch(err => console.warn('SW', err));
   }
+  async function hardReload() {
+    try { await autosaveNow('update'); } catch (_) {}
+    try { if (swReg) await swReg.update(); } catch (_) {}
+    try { const ks = await caches.keys(); await Promise.all(ks.filter(k => k !== 'mm-shared').map(k => caches.delete(k))); } catch (_) {}
+    location.replace(location.pathname + '?v=' + Date.now());
+  }
+  async function checkUpdate(manual) {
+    if (!isWeb) { if (manual) showNotice('Este arquivo foi aberto direto do aparelho. Para atualizar, abra o arquivo novo.\nVersão atual: ' + window.APP_BUILD, 'Atualização'); return; }
+    lastCheck = Date.now();
+    if (manual) status.textContent = '🔄 Procurando versão nova…';
+    try {
+      const r = await fetch('./index.html?nocache=' + Date.now(), { cache: 'no-store' });
+      const txt = await r.text();
+      const m = txt.match(/window\.APP_BUILD = '([^']+)'/);
+      const remote = m ? m[1] : null;
+      if (remote && remote !== window.APP_BUILD) showUpdate(remote);
+      else if (manual) {
+        if (confirm('Você já está na versão mais nova (' + window.APP_BUILD + ').\n\nRecarregar mesmo assim, limpando o cache do app? (o mapa é salvo antes)')) hardReload();
+        else status.textContent = '✅ Versão mais nova: ' + window.APP_BUILD;
+      }
+    } catch (err) { if (manual) showNotice('Sem conexão com o site agora. Versão atual: ' + window.APP_BUILD, 'Atualização'); }
+  }
+  function showUpdate(remote) {
+    if (updBar) updBar.remove();
+    updBar = document.createElement('div'); updBar.id = 'tabUpdate';
+    updBar.innerHTML = '<span>🔄 Nova versão disponível: <b></b></span><button type="button" data-u="1">Atualizar agora</button><button type="button" data-u="0">Depois</button>';
+    updBar.querySelector('b').textContent = remote;
+    updBar.addEventListener('click', ev => { const b = ev.target.closest('button'); if (!b) return; if (b.dataset.u === '1') hardReload(); else { updBar.remove(); updBar = null; } });
+    document.body.appendChild(updBar);
+  }
+  if (isWeb) {
+    setTimeout(() => checkUpdate(false), 4000);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && Date.now() - lastCheck > 5 * 60 * 1000) checkUpdate(false); });
+  }
+  T.checkUpdate = checkUpdate;
 })();
 
 </script>
