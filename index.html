@@ -138,14 +138,16 @@
 
 
   /* ---------- S Pen: botão lateral = BORRACHA instantânea (como no Samsung Notes) ----------
-     Nos modos Caneta/Borracha, os traços da S Pen são montados aqui a partir do CONTATO da ponta e do
-     estado do botão, independentemente de como o aparelho relata o botão (pressionado antes de encostar,
-     depois de encostar ou só durante o contato). Segurou o botão: o traço vira borracha na hora; soltou:
-     volta a ser caneta (inclusive no meio do traço). O app recebe traços normais de caneta ou de
-     "ponta borracha" (button 5 / buttons 32), que ele já sabia apagar. */
-  const P = T.pen = { active: null };
+     Em aparelhos Samsung o Chrome entrega o botão da S Pen como se fosse um "toque" (às vezes sem nenhum
+     indicador de botão). O que nunca engana é a PRESSÃO: só há contato físico com pressão > 0.
+       • "pressionou" com pressão 0 (no ar) ou com indicador de botão/borracha  → borracha ARMADA até soltar
+       • ponta encosta (pressão > 0)  → começa o traço: tinta, ou borracha se armada
+       • pressão volta a 0 (ponta levantou)  → o traço termina — nunca mais escreve no ar
+     O app recebe traços comuns de caneta ou de "ponta borracha" (button 5 / buttons 32). */
+  const P = T.pen = { active: null, down: false, armed: false, armSrc: null };
   const shieldOn = () => { const sh = document.getElementById('tabInkShield'); return !!sh && getComputedStyle(sh).display !== 'none'; };
   const penRouting = () => inkMode() && shieldOn();
+  const fromPen = e => e.pointerType === 'pen' || (e.pointerType === 'mouse' && now() - T.lastPenT < 2000);   // S Pen convertida em "mouse"
   function mkPen(type, src, eraser) {
     const up = type === 'pointerup' || type === 'pointercancel';
     const ev = new PointerEvent(type, {
@@ -163,34 +165,54 @@
     const sh = document.getElementById('tabInkShield') || svgEl();
     if (type === 'pointermove') {
       const nat = (typeof src.getCoalescedEvents === 'function' && src.getCoalescedEvents().length) ? src.getCoalescedEvents() : [src];
-      const list = nat.map(n => mkPen('pointermove', n, eraser));
+      const list = nat.filter(n => n.pressure > 0 || src.pointerType === 'mouse').map(n => mkPen('pointermove', n, eraser));
       const pred = (typeof src.getPredictedEvents === 'function') ? src.getPredictedEvents().map(n => mkPen('pointermove', n, eraser)) : [];
       const ev = mkPen('pointermove', src, eraser);
-      Object.defineProperty(ev, 'getCoalescedEvents', { value: () => list });
+      Object.defineProperty(ev, 'getCoalescedEvents', { value: () => list.length ? list : [ev] });
       Object.defineProperty(ev, 'getPredictedEvents', { value: () => pred });
       sh.dispatchEvent(ev);
     } else sh.dispatchEvent(mkPen(type, src, eraser));
   }
+  const setFlag = () => { if (T.setEraseFlag) T.setEraseFlag(P.armed); };
   function penRoute(e, cancelled) {
     const isEnd = cancelled || e.type === 'pointerup';
-    const barrel = (e.buttons & 2) === 2 || (e.type === 'pointerdown' && e.button === 2);
-    const eraserEnd = (e.buttons & 32) === 32 || (e.type === 'pointerdown' && e.button === 5);
-    const contact = !isEnd && ((e.buttons & 1) === 1 || eraserEnd || (barrel && e.pressure > 0));
-    const wantEraser = barrel || eraserEnd;
-    if (wantEraser) T.lastBarrelT = now();
-    const A = P.active;
-    if (A && !contact) { emit(cancelled ? 'pointercancel' : 'pointerup', e, A.eraser); P.active = null; T.setEraseFlag && T.setEraseFlag(false); return; }
-    if (!A && contact) { P.active = { eraser: wantEraser }; T.setEraseFlag && T.setEraseFlag(wantEraser); emit('pointerdown', e, wantEraser); return; }
-    if (A && contact) {
+    const isMouse = e.pointerType === 'mouse';
+    const bits = (e.buttons & 2) === 2 || (e.buttons & 32) === 32 || (e.type === 'pointerdown' && (e.button === 2 || e.button === 5));
+    // contato físico = pressão > 0 (evento convertido em "mouse" não traz pressão: vale enquanto pressionado)
+    const contact = !isEnd && e.buttons !== 0 && (isMouse ? true : e.pressure > 0);
+    if (e.type === 'pointerdown') {
+      P.down = true;
+      if (bits || isMouse || !(e.pressure > 0)) { P.armed = true; P.armSrc = bits ? 'bits' : 'down'; T.lastBarrelT = now(); }
+    } else if (!isEnd) {
+      if (bits) { if (!P.armed) { P.armed = true; P.armSrc = 'bits'; } T.lastBarrelT = now(); }
+      else if (P.armed && P.armSrc === 'bits') { P.armed = false; P.armSrc = null; }      // soltou o botão no meio do traço
+    }
+    setFlag();
+    const A = P.active, wantEraser = P.armed;
+    if (A && !contact) {
+      emit(cancelled ? 'pointercancel' : 'pointerup', e, A.eraser); P.active = null;
+    } else if (!A && contact) {
+      P.active = { eraser: wantEraser }; emit('pointerdown', e, wantEraser);
+    } else if (A && contact) {
       if (wantEraser !== A.eraser) {                                  // botão apertado/solto no meio do traço: troca na hora
         emit('pointerup', e, A.eraser);
-        P.active = { eraser: wantEraser }; T.setEraseFlag && T.setEraseFlag(wantEraser);
-        emit('pointerdown', e, wantEraser);
-        return;
-      }
-      emit('pointermove', e, A.eraser);
+        P.active = { eraser: wantEraser }; emit('pointerdown', e, wantEraser);
+      } else emit('pointermove', e, A.eraser);
     }
+    if (isEnd) { P.down = false; P.armed = false; P.armSrc = null; setFlag(); }
   }
+
+  /* ---------- diagnóstico da S Pen (menu ⋯): registra os eventos crus que o aparelho envia ---------- */
+  T.diagLog = [];
+  let lastLogKey = '', lastLogT = 0;
+  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'contextmenu'].forEach(type => window.addEventListener(type, e => {
+    if (!T.diag || e.__tabSynth || (e.pointerType === 'touch')) return;
+    const key = type + e.pointerType + e.button + '|' + e.buttons + '|' + (e.pressure > 0);
+    if (type === 'pointermove' && key === lastLogKey && now() - lastLogT < 250) return;
+    lastLogKey = key; lastLogT = now();
+    T.diagLog.push(`${type.replace('pointer', '').padEnd(11)} ${String(e.pointerType || '-').padEnd(5)} btn=${e.button} btns=${e.buttons} p=${(e.pressure || 0).toFixed(2)}`);
+    if (T.diagLog.length > 16) T.diagLog.shift();
+  }, true));
 
   /* ---------- roteador de ponteiros ---------- */
   window.addEventListener('pointerdown', e => {
@@ -200,7 +222,7 @@
       if (T.gesture && T.gesture.kind === 'pan') { T.cancelGesture(); }          // palma arrastou a tela antes da caneta: desfaz
       T.owned.forEach((p, id) => synthCancel(id)); T.owned.clear();
       // modo Caneta/Borracha: o traço é montado pelo roteador (botão lateral = borracha)
-      if (P.active || (penRouting() && inSvg(e.target))) { swallow(e); penRoute(e, false); return; }
+      if (P.down || P.active || (penRouting() && inSvg(e.target))) { swallow(e); penRoute(e, false); return; }
       // outros modos: botão lateral da S Pen (ou botão direito) + toque = menu de contexto
       if (inSvg(e.target) && (e.button === 2 || (e.buttons & 2))) {
         swallow(e); T.penCtx = e.pointerId;
@@ -210,6 +232,7 @@
       T.penTap = { t: now(), x: e.clientX, y: e.clientY };
       return;
     }
+    if (e.pointerType === 'mouse' && fromPen(e) && (P.down || P.active || (penRouting() && inSvg(e.target)))) { swallow(e); penRoute(e, false); return; }
     if (e.pointerType !== 'touch') return;
     T.lastTouchT = now();
     if (!inSvg(e.target) || dialogOpen()) return;
@@ -252,9 +275,10 @@
     if (e.pointerType === 'pen') {
       T.lastPenT = now();                                           // caneta pairando conta como "caneta perto"
       if (T.penCtx === e.pointerId) { swallow(e); return; }
-      if (P.active || (penRouting() && inSvg(e.target) && ((e.buttons & 33) || ((e.buttons & 2) && e.pressure > 0)))) { swallow(e); penRoute(e, false); }
+      if (P.down || P.active || (penRouting() && inSvg(e.target) && e.buttons !== 0)) { swallow(e); penRoute(e, false); }
       return;
     }
+    if (e.pointerType === 'mouse' && (P.down || P.active)) { swallow(e); penRoute(e, false); return; }
     const p = T.owned.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX; p.y = e.clientY;
@@ -270,13 +294,14 @@
     if (e.pointerType === 'pen') {
       T.penDown = false; T.lastPenT = now();
       if (T.penCtx === e.pointerId) { swallow(e); T.penCtx = null; return; }
-      if (P.active) { swallow(e); penRoute(e, cancelled); T.penTap = null; return; }
+      if (P.down || P.active) { swallow(e); penRoute(e, cancelled); T.penTap = null; return; }
       if (penRouting() && inSvg(e.target)) { swallow(e); T.penTap = null; return; }   // soltou o botão pairando: nada a fazer
       // toque duplo com a caneta só fora do modo Caneta (escrever ".." sobre um balão não abre o editor)
       if (!cancelled && T.penTap && !inkMode()) trackTap(e, T.penTap.t, T.penTap.x, T.penTap.y);
       T.penTap = null;
       return;
     }
+    if (e.pointerType === 'mouse' && (P.down || P.active)) { swallow(e); penRoute(e, cancelled); return; }
     const p = T.owned.get(e.pointerId);
     if (!p) return;
     clearTimeout(T.longT);
@@ -2573,6 +2598,13 @@ body.theme-dark #tabMore label { color: #e2e8f0; }
 body.tab:not(.tab-erase-mode) #penCursor { display: none !important; }
 /* apagando com o botão da S Pen: o botão Borracha da barra acende enquanto o botão estiver apertado */
 body.tab.tab-pen-erasing #tabDock [data-mode="eraser"] { background: #fee2e2; border-color: #ef4444; }
+#tabDiag { position: fixed; top: 92px; right: 12px; z-index: 70; display: none; width: min(430px, calc(100vw - 24px)); padding: 10px 12px; border-radius: 12px;
+  background: rgba(15,23,42,.94); color: #e2e8f0; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; box-shadow: 0 10px 30px rgba(0,0,0,.35); pointer-events: auto; }
+#tabDiag .dg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-family: system-ui, sans-serif; }
+#tabDiag .dg-head button { min-height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid #475569; background: #1e293b; color: #e2e8f0; }
+#tabDiag .dg-state { color: #fde68a; margin-bottom: 6px; font-family: system-ui, sans-serif; }
+#tabDiag pre { margin: 0; white-space: pre-wrap; min-height: 120px; }
+#tabDiag .dg-tip { margin-top: 6px; color: #94a3b8; font-family: system-ui, sans-serif; font-size: 11.5px; }
 
 </style>
 </head>
@@ -13443,7 +13475,11 @@ window.runSimulatedPenTabletStroke = function() {
     // Antes: renderDrawings() reconstruía TODOS os desenhos a cada traço (≈0,4–0,9 s com mapas grandes)
     if (canMerge) replaceDrawingDOM(prev, [prev]); else replaceDrawingDOM(null, [lastStrokeGroup.obj]);
     scheduleDrawingSideRefresh();
-    clearLiveCanvas();
+    // mantém o rascunho até o traço definitivo ter sido pintado (2 quadros + folga); um traço novo redesenha o canvas sozinho
+    const liveGen = (window.__liveGen = (window.__liveGen || 0) + 1);
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => {
+      if (!ses && window.__liveGen === liveGen) clearLiveCanvas();
+    }, 90)));
     scheduleMinimapDraw();
     scheduleLocalAutoBackup();
   }
@@ -15692,6 +15728,7 @@ async function sdxRunImport() {
     <button data-act="fit">⊡ Enquadrar o mapa</button>
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
+    <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · botão da S Pen + toque = menu</div>`;
   document.body.appendChild(more);
   $('tabFinger').checked = T.fingerDraws;
@@ -15740,6 +15777,7 @@ async function sdxRunImport() {
     if (a === 'fit') fitView();
     else if (a === 'full') { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); }
     else if (a === 'recover') recoverAutosave(true);
+    else if (a === 'diag') toggleDiag();
     more.classList.remove('open');
   });
   ['setCanvasToolMode', 'setPenSubTool', 'undo', 'redo', 'saveState'].forEach(fn => {
@@ -15747,6 +15785,28 @@ async function sdxRunImport() {
     window[fn] = function () { const r = o.apply(this, arguments); try { syncDock(); } catch (_) {} return r; };
   });
   syncDock();
+
+  /* ---------- painel de diagnóstico da S Pen ---------- */
+  const diagBox = document.createElement('div');
+  diagBox.id = 'tabDiag';
+  diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><button type="button">Fechar</button></div><div class="dg-state"></div><pre></pre><div class="dg-tip">Teste: paire sem encostar · aperte o botão no ar · encoste com o botão apertado · levante · solte o botão. Depois tire um print desta caixa.</div>';
+  document.body.appendChild(diagBox);
+  let diagTimer = 0;
+  function toggleDiag(force) {
+    T.diag = force != null ? force : !T.diag;
+    diagBox.style.display = T.diag ? 'block' : 'none';
+    clearInterval(diagTimer);
+    if (T.diag) {
+      T.diagLog.length = 0;
+      diagTimer = setInterval(() => {
+        const P = T.pen || {};
+        diagBox.querySelector('.dg-state').textContent = `modo: ${canvasToolMode}${canvasToolMode === 'draw' ? '/' + window.penSubTool : ''} · borracha armada: ${P.armed ? 'SIM' : 'não'} · traço ativo: ${P.active ? (P.active.eraser ? 'BORRACHA' : 'tinta') : '—'}`;
+        diagBox.querySelector('pre').textContent = T.diagLog.join('\n') || '(sem eventos ainda — use a S Pen sobre o mapa)';
+      }, 200);
+    }
+  }
+  diagBox.querySelector('button').onclick = () => toggleDiag(false);
+  T.toggleDiag = toggleDiag;
 
   /* ---------- salvamento automático no tablet (IndexedDB: sem o limite de ~5 MB do localStorage) ----------
      Grava quando o app vai para segundo plano / tela bloqueia / botão voltar (momentos em que o Android pode
