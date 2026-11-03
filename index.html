@@ -53,6 +53,7 @@
     const s = svgEl();
     const r = s.getBoundingClientRect();
     s.style.transformOrigin = '0 0'; s.style.willChange = 'transform';
+    if (window.__clearLiveInk) try { window.__clearLiveInk(); } catch (_) {}
     try { if (typeof hideNodeFloatUI === 'function') hideNodeFloatUI(); } catch (_) {}
     const dp = document.getElementById('drawingFloatPanel'); if (dp) dp.style.visibility = 'hidden';
     return { r, pan0: { x: pan.x, y: pan.y }, s0: scale, pan1: { x: pan.x, y: pan.y }, s1: scale, raf: 0 };
@@ -133,7 +134,7 @@
   window.addEventListener('dblclick', e => { if (e.isTrusted && now() - T.lastSynthDbl < 600) swallow(e); }, true);
   window.addEventListener('contextmenu', e => {
     if (!e.isTrusted) return;
-    if (T.owned.size || now() - T.lastSynthCtx < 900 || now() - (T.lastTouchT || -1e9) < 900 || now() - (T.lastBarrelT || -1e9) < 900 || P.active) swallow(e);   // toque longo do Android: tratamos nós mesmos
+    if (T.owned.size || now() - T.lastSynthCtx < 900 || now() - (T.lastTouchT || -1e9) < 900 || now() - (T.lastBarrelT || -1e9) < 900 || now() - T.lastPenT < 1500 || P.active || P.down) swallow(e);   // toque longo do Android: tratamos nós mesmos
   }, true);
 
 
@@ -174,6 +175,33 @@
     } else sh.dispatchEvent(mkPen(type, src, eraser));
   }
   const setFlag = () => { if (T.setEraseFlag) T.setEraseFlag(P.armed); };
+  // borracha do botão: apaga direto pela geometria (funciona em qualquer modo), com um passo de desfazer por traço
+  const ER = { snap: null, any: false, last: null };
+  const erRadius = () => Math.max(3, (window.penEraserSize || 24) / (2 * scale));
+  function erAt(q) { if (eraseAtWorldPoint(q.x, q.y, erRadius())) { ER.any = true; applyEraseDelta(); } }
+  function erStart(e) { ER.snap = createFullSnapshot(); ER.any = false; ER.last = worldPoint(e.clientX, e.clientY); erAt(ER.last); }
+  function erMove(e) {
+    const nat = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+    for (const n of nat) {
+      if (n.pointerType === 'pen' && !(n.pressure > 0)) continue;
+      const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
+      const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
+      for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
+      ER.last = q;
+    }
+  }
+  function erEnd() {
+    if (ER.any && ER.snap) {
+      undoStack.push(ER.snap); if (undoStack.length > MAX_UNDO) undoStack.shift();
+      redoStack.length = 0;
+      try { updateUndoButtons(); markUnsavedChanges(true); scheduleLocalAutoBackup(); } catch (_) {}
+      status.textContent = '🧽 Apagado com o botão da S Pen (↶ desfaz).';
+    }
+    ER.snap = null; ER.last = null; ER.any = false;
+  }
+  function strokeStart(e, eraser) { P.active = { eraser }; if (eraser) erStart(e); else emit('pointerdown', e, false); }
+  function strokeMove(e) { if (P.active.eraser) erMove(e); else emit('pointermove', e, false); }
+  function strokeEnd(e, cancelled) { if (P.active.eraser) erEnd(); else emit(cancelled ? 'pointercancel' : 'pointerup', e, false); P.active = null; }
   function penRoute(e, cancelled) {
     const isEnd = cancelled || e.type === 'pointerup';
     const isMouse = e.pointerType === 'mouse';
@@ -188,18 +216,16 @@
       else if (P.armed && P.armSrc === 'bits') { P.armed = false; P.armSrc = null; }      // soltou o botão no meio do traço
     }
     setFlag();
-    const A = P.active, wantEraser = P.armed;
-    if (A && !contact) {
-      emit(cancelled ? 'pointercancel' : 'pointerup', e, A.eraser); P.active = null;
-    } else if (!A && contact) {
-      P.active = { eraser: wantEraser }; emit('pointerdown', e, wantEraser);
-    } else if (A && contact) {
+    const A = P.active, wantEraser = P.armed, canInk = penRouting();
+    if (A && !contact) strokeEnd(e, cancelled);
+    else if (!A && contact) { if (wantEraser || canInk) strokeStart(e, wantEraser); }
+    else if (A && contact) {
       if (wantEraser !== A.eraser) {                                  // botão apertado/solto no meio do traço: troca na hora
-        emit('pointerup', e, A.eraser);
-        P.active = { eraser: wantEraser }; emit('pointerdown', e, wantEraser);
-      } else emit('pointermove', e, A.eraser);
+        strokeEnd(e, false);
+        if (wantEraser || canInk) strokeStart(e, wantEraser);
+      } else strokeMove(e);
     }
-    if (isEnd) { P.down = false; P.armed = false; P.armSrc = null; setFlag(); }
+    if (isEnd) { if (P.active) strokeEnd(e, cancelled); P.down = false; P.armed = false; P.armSrc = null; setFlag(); }
   }
 
   /* ---------- diagnóstico da S Pen (menu ⋯): registra os eventos crus que o aparelho envia ---------- */
@@ -221,18 +247,14 @@
       T.penDown = true; T.lastPenT = now();
       if (T.gesture && T.gesture.kind === 'pan') { T.cancelGesture(); }          // palma arrastou a tela antes da caneta: desfaz
       T.owned.forEach((p, id) => synthCancel(id)); T.owned.clear();
-      // modo Caneta/Borracha: o traço é montado pelo roteador (botão lateral = borracha)
-      if (P.down || P.active || (penRouting() && inSvg(e.target))) { swallow(e); penRoute(e, false); return; }
-      // outros modos: botão lateral da S Pen (ou botão direito) + toque = menu de contexto
-      if (inSvg(e.target) && (e.button === 2 || (e.buttons & 2))) {
-        swallow(e); T.penCtx = e.pointerId;
-        fireContext(e.clientX, e.clientY);
-        return;
-      }
+      // modo Caneta/Borracha: o traço é montado pelo roteador. Em QUALQUER modo, o botão da S Pen = borracha
+      // (sinais do botão: indicador de botão/borracha ou "pressionou" sem pressão, isto é, no ar)
+      const btnSig = (e.button === 2 || e.button === 5 || (e.buttons & 34) !== 0 || !(e.pressure > 0));
+      if (P.down || P.active || (inSvg(e.target) && (penRouting() || btnSig))) { swallow(e); penRoute(e, false); return; }
       T.penTap = { t: now(), x: e.clientX, y: e.clientY };
       return;
     }
-    if (e.pointerType === 'mouse' && fromPen(e) && (P.down || P.active || (penRouting() && inSvg(e.target)))) { swallow(e); penRoute(e, false); return; }
+    if (e.pointerType === 'mouse' && fromPen(e) && (P.down || P.active || inSvg(e.target))) { swallow(e); penRoute(e, false); return; }
     if (e.pointerType !== 'touch') return;
     T.lastTouchT = now();
     if (!inSvg(e.target) || dialogOpen()) return;
@@ -2605,6 +2627,9 @@ body.tab.tab-pen-erasing #tabDock [data-mode="eraser"] { background: #fee2e2; bo
 #tabDiag .dg-state { color: #fde68a; margin-bottom: 6px; font-family: system-ui, sans-serif; }
 #tabDiag pre { margin: 0; white-space: pre-wrap; min-height: 120px; }
 #tabDiag .dg-tip { margin-top: 6px; color: #94a3b8; font-family: system-ui, sans-serif; font-size: 11.5px; }
+#tabMore .tm-ver { font-size: 12.5px; color: #334155; padding: 2px 2px 0; }
+#tabRecover button { color: #92400e; }
+#tabRecover button[data-r="1"] { color: #fff; }
 
 </style>
 </head>
@@ -13067,6 +13092,27 @@ window.runSimulatedPenTabletStroke = function() {
     }
   }
 
+  function liveIncr() {
+    const s = ses; if (!s || !s.pts.length) return;
+    const pts = s.pts, prof = window.penBrushProfile || 'round';
+    cx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * pan.x, dpr * pan.y);
+    cx.shadowBlur = 0; cx.shadowColor = 'transparent'; cx.setLineDash([]);
+    cx.lineCap = 'round'; cx.lineJoin = 'round';
+    cx.strokeStyle = cx.fillStyle = window.penStrokeColor;
+    if (s.drawn == null) {
+      s.wl = window.inkLiveWidth(s.tool, prof, s.size, pts, 0, null);
+      cx.beginPath(); cx.arc(pts[0].x, pts[0].y, s.wl / 2, 0, Math.PI * 2); cx.fill();
+      s.drawn = 0;
+    }
+    for (let i = s.drawn + 1; i < pts.length; i++) {
+      const w = window.inkLiveWidth(s.tool, prof, s.size, pts, i, s.wl);
+      cx.lineWidth = (s.wl + w) / 2;
+      cx.beginPath(); cx.moveTo(pts[i - 1].x, pts[i - 1].y); cx.lineTo(pts[i].x, pts[i].y); cx.stroke();
+      s.wl = w; s.drawn = i;
+    }
+  }
+  window.__clearLiveInk = () => clearLiveCanvas();
+
   function filterPoint(st, x, y, t) {
     const smoothRatio = Math.max(0, Math.min(1, (window.penSmoothing ?? 55) / 100));
     if (!st.init || smoothRatio <= 0.02) {
@@ -13089,7 +13135,7 @@ window.runSimulatedPenTabletStroke = function() {
   function addSample(ev, isEndpoint) {
     const s = ses, r = s.r;
     const mappedP = window.mapHardwarePressure(ev.pressure, ev.pointerType);
-    s.ps = s.ps == null ? mappedP : lp(s.ps, mappedP, 0.2);
+    s.ps = s.ps == null ? mappedP : lp(s.ps, mappedP, 0.55);
     const q = isEndpoint
       ? { x: ev.clientX - r.left, y: ev.clientY - r.top }
       : filterPoint(s.flt, ev.clientX - r.left, ev.clientY - r.top, ev.timeStamp || performance.now());
@@ -13279,8 +13325,10 @@ window.runSimulatedPenTabletStroke = function() {
       ortho: !!(window.penStraightLineLock || e.shiftKey),
       axis: null
     };
+    ses.incr = ['ballpoint', 'fountain', 'brush'].includes(activeTool) && effOp >= 0.99 && !ses.ortho &&
+      (window.penLineStyle || 'solid') === 'solid' && !(activeTool === 'brush' && (window.penBrushProfile || 'round') !== 'round');
     addSample(e, true);
-    renderLiveFrame();
+    if (ses.incr) liveIncr(); else renderLiveFrame();
   }, true);
 
   window.addEventListener('pointermove', ev => {
@@ -13333,7 +13381,7 @@ window.runSimulatedPenTabletStroke = function() {
       ses.hud = now;
       updatePenPressureHUD(ev.pointerType === 'pen' ? ev.pressure : 0, ev.pointerType, ev.tiltX || 0, ev.tiltY || 0, ev.twist || 0);
     }
-    if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
+    if (ses.incr) liveIncr(); else if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
   }, { passive: true });
 
   function finishSession(ev) {
@@ -15666,12 +15714,103 @@ async function sdxRunImport() {
 <script>
 
 /* =====================================================================
+   MOTOR DE TINTA v10 (tablet) — canetas com personalidade própria
+   • Técnica: espessura constante.
+   • Tinteiro (estilo Samsung Notes): espessura segue a pressão de verdade, afina um pouco em traços rápidos,
+     entrada e saída afinadas.
+   • Pincel: variação forte de pressão e velocidade, pontas longas e macias.
+   O MESMO modelo de espessura é usado no rascunho ao vivo e no traço definitivo (sem "pulo" ao levantar).
+   ===================================================================== */
+(function inkV10() {
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const MODELS = {
+    // F(pn): pressão normalizada → fator de espessura; sp: quanto afina com velocidade; tIn/tOut: pontos de afinamento
+    fountain: { F: pn => 0.38 + 0.92 * Math.pow(pn, 1.15), sp: 0.22, tIn: 5, tOut: 5, t0: 0.5 },
+    brush:    { F: pn => 0.15 + 1.85 * Math.pow(pn, 1.35), sp: 0.42, tIn: 9, tOut: 9, t0: 0.22 }
+  };
+  const pnOf = q => clamp(((q && q.p != null ? q.p : 1) - 0.22) / 1.08, 0, 1);   // mapHardwarePressure → 0..1
+  const usesV10 = (penType, profile) => penType === 'fountain' || (penType === 'brush' && (profile || 'round') === 'round');
+  window.inkUsesV10 = usesV10;
+
+  // espessura "crua" no ponto i (sem afinamento final) — usada ao vivo e no definitivo
+  function rawWidth(M, size, pts, i) {
+    const q = pts[i], prev = pts[i - 1] || q;
+    const d = Math.hypot(q.x - prev.x, q.y - prev.y);
+    const speed = clamp((d / size - 0.35) / 2.2, 0, 1);
+    let w = size * M.F(pnOf(q)) * (1 - M.sp * speed);
+    if (i < M.tIn) w *= M.t0 + (1 - M.t0) * (i / M.tIn);
+    return Math.max(0.6, w);
+  }
+  window.inkLiveWidth = function (penType, profile, size, pts, i, prevW) {
+    const M = usesV10(penType, profile) ? MODELS[penType] : null;
+    if (!M) return size;
+    const w = rawWidth(M, size, pts, i);
+    return prevW == null ? w : prevW + (w - prevW) * 0.55;          // suavização causal leve (sem atraso visível)
+  };
+
+  const fmt = v => (Math.round(v * 100) / 100).toString();
+  const circle = (p, r) => `M ${fmt(p.x - r)} ${fmt(p.y)} a ${fmt(r)} ${fmt(r)} 0 1 0 ${fmt(2 * r)} 0 a ${fmt(r)} ${fmt(r)} 0 1 0 ${fmt(-2 * r)} 0 Z`;
+  function outlineV10(rawPts, baseSize, penType) {
+    const M = MODELS[penType];
+    const size = Math.max(1.2, Number(baseSize) || 5);
+    if (!rawPts || !rawPts.length) return '';
+    if (rawPts.length === 1) return circle(rawPts[0], Math.max(0.8, rawWidth(M, size, rawPts, 0) / 2));
+    // remove pontos colados (mantém detalhe: limiar pequeno)
+    const minD = Math.max(0.5, size * 0.07);
+    const pts = [rawPts[0]];
+    for (let i = 1; i < rawPts.length; i++) {
+      const a = pts[pts.length - 1], b = rawPts[i];
+      if (Math.hypot(b.x - a.x, b.y - a.y) >= minD || i === rawPts.length - 1) pts.push(b);
+    }
+    const n = pts.length;
+    if (n < 2) return circle(pts[0], Math.max(0.8, rawWidth(M, size, pts, 0) / 2));
+    // larguras: mesma regra do ao vivo + afinamento de saída + suavização simétrica leve
+    let w = pts.map((_, i) => rawWidth(M, size, pts, i));
+    for (let i = 0; i < M.tOut && i < n; i++) { const k = n - 1 - i; w[k] *= M.t0 + (1 - M.t0) * (i / M.tOut); }
+    for (let pass = 0; pass < 2; pass++) w = w.map((v, i) => (i === 0 || i === n - 1) ? v : (w[i - 1] + 2 * v + w[i + 1]) / 4);
+    const rad = w.map(v => Math.max(0.35, v / 2));
+    // tangentes estáveis
+    const tx = new Array(n), ty = new Array(n);
+    let ltx = 1, lty = 0;
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+      if (len > 1e-3) { ltx = dx / len; lty = dy / len; }
+      tx[i] = ltx; ty[i] = lty;
+    }
+    const L = [], R = [];
+    for (let i = 0; i < n; i++) {
+      const nx = -ty[i], ny = tx[i];
+      L.push({ x: pts[i].x + nx * rad[i], y: pts[i].y + ny * rad[i] });
+      R.push({ x: pts[i].x - nx * rad[i], y: pts[i].y - ny * rad[i] });
+    }
+    const r0 = rad[0], r1 = rad[n - 1];
+    let d = `M ${fmt(L[0].x)} ${fmt(L[0].y)}`;
+    for (let i = 1; i < n - 1; i++) d += ` Q ${fmt(L[i].x)} ${fmt(L[i].y)} ${fmt((L[i].x + L[i + 1].x) / 2)} ${fmt((L[i].y + L[i + 1].y) / 2)}`;
+    d += ` L ${fmt(L[n - 1].x)} ${fmt(L[n - 1].y)} A ${fmt(r1)} ${fmt(r1)} 0 0 0 ${fmt(R[n - 1].x)} ${fmt(R[n - 1].y)}`;
+    for (let i = n - 2; i >= 1; i--) d += ` Q ${fmt(R[i].x)} ${fmt(R[i].y)} ${fmt((R[i].x + R[i - 1].x) / 2)} ${fmt((R[i].y + R[i - 1].y) / 2)}`;
+    return d + ` L ${fmt(R[0].x)} ${fmt(R[0].y)} A ${fmt(r0)} ${fmt(r0)} 0 0 0 ${fmt(L[0].x)} ${fmt(L[0].y)} Z`;
+  }
+  const _old = window.buildInkOutline;
+  window.buildInkOutline = function (pts, baseSize, penType, profile = 'round') {
+    return usesV10(penType, profile) ? outlineV10(pts, baseSize, penType) : _old.apply(this, arguments);
+  };
+})();
+
+</script>
+<script>
+
+/* =====================================================================
    CAMADA TABLET — interface por toque, arquivos, salvamento automático
    ===================================================================== */
 (function tabletUI() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
+  window.APP_BUILD = 'Tablet 9.7 · 03/11/2026 16:40';
+  // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
+  try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
+  setTimeout(() => { try { status.textContent = '✅ MindMap Studio ' + window.APP_BUILD + ' carregado.'; } catch (_) {} }, 600);
   const standalone = matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
   if (standalone) document.body.classList.add('tab-standalone');
 
@@ -15729,6 +15868,7 @@ async function sdxRunImport() {
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
+    <div class="tm-ver">Versão: <b>Tablet 9.7 · 03/11/2026 16:40</b></div>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · botão da S Pen + toque = menu</div>`;
   document.body.appendChild(more);
   $('tabFinger').checked = T.fingerDraws;
