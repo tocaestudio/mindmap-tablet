@@ -536,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.4</title>
+<title>MindMap Studio — Tablet 11.5</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -10002,7 +10002,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.4",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.5",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -10046,7 +10046,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.4 · 04/11/2026 15:30';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.5 · 04/11/2026 18:00';
  }
  document.body.classList.add('theme-dots');
 
@@ -16793,7 +16793,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.4 · 04/11/2026 15:30';
+  window.APP_BUILD = 'Tablet 11.5 · 04/11/2026 18:00';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16840,6 +16840,7 @@ async function sdxRunImport() {
     <button data-mod="shift" title="Seleção múltipla: cada toque soma à seleção (equivale a segurar Shift)">⇧<small>Somar</small></button>
     <button data-mod="alt" title="Inverte arrastar ramo inteiro / balão isolado (equivale a segurar Alt)">⌥<small>Ramo</small></button>
     <span class="td-sep"></span>
+    <button data-act="full" id="tabDockFull" title="Tela cheia: esconde a barra de aplicativos do tablet (toque de novo para sair)">⛶</button>
     <button data-act="save" title="Salvar">💾</button>
     <button data-act="more" title="Mais opções">⋯</button>
     <button data-act="hide" class="td-min" title="Recolher a barra">▾</button>`;
@@ -16855,12 +16856,13 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabShapes"> 📐 Desenhar e segurar a S Pen parada transforma em forma perfeita (retângulo, círculo, elipse, triângulo)</label>
     <label><input type="checkbox" id="tabHoldAll"> 📏 Segurar parado no fim do traço deixa reto também nas canetas (no marca-texto já é sempre)</label>
     <button data-act="fit">⊡ Enquadrar o mapa</button>
-    <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
+    <button data-act="full" id="tabFullBtn">⛶ Tela cheia (esconde a barra de baixo do tablet)</button>
+    <label id="tabAutoFullRow"><input type="checkbox" id="tabAutoFull"> ⛶ Abrir sempre em tela cheia (entra sozinho no primeiro toque; volta sozinho se sair)</label>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
     <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.4 · 04/11/2026 15:30</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 11.5 · 04/11/2026 18:00</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16934,7 +16936,42 @@ async function sdxRunImport() {
   T.btnContactOK = !!prefs.btnContactOK;
   T.learnBtnContact = () => { if (!T.btnContactOK) { T.btnContactOK = prefs.btnContactOK = true; savePrefs(); } };
 
-  if (standalone || !document.documentElement.requestFullscreen) $('tabFullBtn').style.display = 'none';
+  /* ---------- v11.5: tela cheia também no app instalado ----------
+     A barra de aplicativos da Samsung (embaixo) e a barra de status só somem em tela cheia. Antes o botão ficava
+     escondido no app instalado. O navegador só deixa entrar em tela cheia depois de um toque — por isso o
+     modo automático entra no primeiro toque (e volta no toque seguinte se o Android tirar da tela cheia,
+     por exemplo ao abrir o seletor de arquivos ou com o gesto de voltar). */
+  const canFull = !!(document.documentElement.requestFullscreen && document.fullscreenEnabled !== false);
+  let fullUserExit = false;
+  const goFull = () => {
+    if (!canFull || document.fullscreenElement) return Promise.resolve();
+    try { return document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {}); } catch (_) { return Promise.resolve(); }
+  };
+  const toggleFull = () => {
+    if (document.fullscreenElement) { fullUserExit = true; document.exitFullscreen().catch(() => {}); }
+    else { fullUserExit = false; goFull(); }
+  };
+  T.toggleFull = toggleFull;
+  const syncFull = () => {
+    const on = !!document.fullscreenElement;
+    document.body.classList.toggle('tab-full', on);
+    $('tabFullBtn').textContent = on ? '⛶ Sair da tela cheia' : '⛶ Tela cheia (esconde a barra de baixo do tablet)';
+    const db = $('tabDockFull'); if (db) { db.classList.toggle('on', on); db.title = on ? 'Sair da tela cheia' : 'Tela cheia: esconde a barra de aplicativos do tablet'; }
+  };
+  document.addEventListener('fullscreenchange', syncFull);
+  $('tabAutoFull').checked = !!prefs.autoFull;
+  $('tabAutoFull').onchange = e => {
+    prefs.autoFull = e.target.checked; savePrefs();
+    if (prefs.autoFull) { fullUserExit = false; goFull(); }   // a própria marcação já é um toque: entra agora
+    status.textContent = prefs.autoFull ? '⛶ Abrir sempre em tela cheia: LIGADO.' : '⛶ Abrir sempre em tela cheia: desligado.';
+  };
+  const autoFull = () => { if (prefs.autoFull && !fullUserExit && !document.fullscreenElement && !document.hidden) goFull(); };
+  // pointerup/click contam como "toque do usuário" para o navegador (pointerdown de toque/caneta não conta)
+  window.addEventListener('pointerup', autoFull, true);
+  window.addEventListener('click', autoFull, true);
+  window.addEventListener('keydown', autoFull, true);
+  if (!canFull) ['tabFullBtn', 'tabDockFull', 'tabAutoFullRow'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+  syncFull();
 
   const setMode = m => {
     if (m === 'select' || m === 'pan') setCanvasToolMode(m);
@@ -16977,6 +17014,7 @@ async function sdxRunImport() {
       status.textContent = window.penStraightFree ? '📏 Traço RETO ligado: cada traço sai em linha reta (encaixa na horizontal/vertical).' : '📏 Traço reto desligado (no marca-texto, pare a caneta no fim para endireitar).';
     }
     else if (a === 'more') { more.classList.toggle('open'); }
+    else if (a === 'full') { toggleFull(); }
     else if (a === 'hide') { dock.style.display = 'none'; tab.style.display = 'block'; more.classList.remove('open'); }
     syncDock();
   });
@@ -16985,7 +17023,7 @@ async function sdxRunImport() {
     const b = e.target.closest('button'); if (!b) return;
     const a = b.dataset.act;
     if (a === 'fit') fitView();
-    else if (a === 'full') { (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {}); }
+    else if (a === 'full') toggleFull();
     else if (a === 'recover') recoverAutosave(true);
     else if (a === 'diag') toggleDiag();
     else if (a === 'update') checkUpdate(true);
@@ -17003,7 +17041,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.4 · 04/11/2026 15:30</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 11.5 · 04/11/2026 18:00</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +

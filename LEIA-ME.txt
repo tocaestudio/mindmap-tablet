@@ -86,3 +86,11 @@ NOVO NA 11.4 — BORRACHA PRECISA E ESPESSURA CERTA
  • Cada ferramenta guarda a sua espessura: caneta, marca-texto e borracha.
  • Marca-texto: o número mostrado é a espessura real do traço.
  • Borracha: o tamanho é ajustado na mesma barra (aparece "Borracha: − ▬ +").
+
+NOVO NA 11.5 — TELA CHEIA NO APP INSTALADO
+ • Botão ⛶ na barra de ferramentas (e em ⋯ → Tela cheia): esconde a barra de aplicativos
+   do tablet (embaixo) e a barra de status (em cima). Toque de novo para sair.
+ • ⋯ → "Abrir sempre em tela cheia": o app entra em tela cheia no primeiro toque depois de
+   aberto (o Android só permite depois de um toque) e volta sozinho se sair — por exemplo
+   depois do seletor de arquivos ou do gesto de voltar.
+ • Em tela cheia, deslize da borda de baixo para ver a barra do tablet por alguns segundos.
