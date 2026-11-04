@@ -1,5 +1,5 @@
 /* Service worker do MindMap Studio (tablet): app disponível sem internet + receber arquivos do "Compartilhar". */
-const VER = 'mm-tablet-v104';
+const VER = 'mm-tablet-v105';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', e => {

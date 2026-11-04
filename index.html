@@ -420,7 +420,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 10.3</title>
+<title>MindMap Studio — Tablet 10.4</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2723,6 +2723,25 @@ body.theme-dark #penStudioDock { --pd-bg: #0f172a; }
 body.theme-dark #penStudioDock .pd-fly button.chip { border-color: #475569; }
 /* tema escuro: o botão "Arquivo" tinha cor fixa escura (sumia no fundo escuro) */
 body.theme-dark #toolbar button[onclick*="popFile"] { color: #e2e8f0 !important; }
+/* espessura: botões − e + ao lado dos controles deslizantes */
+.ws-btn { all: unset; box-sizing: border-box; display: inline-grid !important; place-items: center; width: 26px !important; height: 26px !important; min-width: 26px;
+  border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #0f172a !important; font: 700 16px/1 system-ui, sans-serif; cursor: pointer; flex: none; user-select: none; touch-action: none; }
+.ws-btn:hover { background: #eff6ff !important; border-color: #2563eb; }
+.ws-btn:active { transform: scale(.92); }
+.dct-group .ws-btn { margin: 0 3px; }
+#penStudioDock .pd-fly .ws-btn { width: 26px !important; height: 26px !important; }
+body.theme-dark .ws-btn { background: #0f172a; color: #e2e8f0 !important; border-color: #475569; }
+body.tab .ws-btn { width: 34px !important; height: 34px !important; min-width: 34px; font-size: 19px; }
+/* controle de espessura da barra de cima mais comprido (era ~68 px: difícil acertar passos pequenos) */
+#dctSizeSlider { width: 150px !important; min-width: 150px; }
+#penStudioDock .pd-fly button.ws-btn { display: inline-grid !important; place-items: center; width: 28px !important; height: 28px !important; flex: none;
+  border: 1px solid #cbd5e1 !important; border-radius: 8px !important; background: #fff !important; color: #0f172a !important; font: 700 16px/1 system-ui, sans-serif !important; }
+#penStudioDock .pd-fly button.ws-btn:hover { background: #eff6ff !important; border-color: #2563eb !important; }
+body.theme-dark #penStudioDock .pd-fly button.ws-btn { background: #1e293b !important; color: #e2e8f0 !important; border-color: #475569 !important; }
+#penProps .pp-row input[type=range]#penSizeSlider { min-width: 110px; }
+/* na barra de cima os botões − e + não aumentam a altura da barra */
+.dct-group .ws-btn { width: 22px !important; height: 22px !important; min-width: 22px; font-size: 15px; border-radius: 7px; }
+body.tab .dct-group .ws-btn { width: 22px !important; height: 22px !important; min-width: 22px; font-size: 15px; }
 
 </style>
 </head>
@@ -9745,7 +9764,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.3",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.4",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9789,7 +9808,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.3 · 03/11/2026 22:29';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.4 · 03/11/2026 22:47';
  }
  document.body.classList.add('theme-dots');
 
@@ -16109,6 +16128,125 @@ async function sdxRunImport() {
 
 </script>
 <script>
+/* =====================================================================
+   ESPESSURA DA CANETA — ajuste fino
+   • meio-passo (0,5 px) nas espessuras finas (até 10 px)
+   • controle deslizante com escala progressiva: a parte fina ocupa mais espaço na barra
+   • arraste lento = ajuste fino (a espessura anda devagar); arraste rápido = anda normal
+   • botões − e + (segure para repetir), roda do mouse e setas do teclado sobre o controle
+   ===================================================================== */
+(function widthSlider() {
+  const MIN = 1, MAX = 64, RES = 1000;
+  const fmt = v => (Math.round(v * 10) / 10).toString().replace('.', ',') + 'px';
+  const snap = v => { v = Math.max(MIN, Math.min(MAX, Number(v) || 4)); return v < 10 ? Math.round(v * 2) / 2 : Math.round(v); };
+  const stepOf = (v, dir) => (dir > 0 ? (v < 10 ? 0.5 : v < 20 ? 1 : 2) : (v <= 10 ? 0.5 : v <= 20 ? 1 : 2));
+  // posição (0..1) ⇄ espessura, curva quadrática: metade da barra cobre 1–17 px
+  const toW = t => MIN + (MAX - MIN) * t * t;
+  const toT = w => Math.sqrt(Math.max(0, (w - MIN) / (MAX - MIN)));
+
+  // aceita meio-passo e a mesma faixa nas duas barras
+  const orig = window.setPenStrokeWidth;
+  if (typeof orig !== 'function') return;
+  window.setPenStrokeWidth = function (val, skipSelection) {
+    const v = snap(val);
+    const r = orig.call(this, Math.round(v), true);              // o original só aceita inteiros: corrige logo abaixo
+    window.penStrokeWidth = v;
+    if (!skipSelection && window.selectedDrawings && window.selectedDrawings.size > 0) {
+      try { updateSelectedDrawingStyle({ strokeWidth: v, fromPenSlider: true }); } catch (_) {}
+    }
+    syncUI();
+    try { if (typeof updateLiveStrokePreview === 'function') updateLiveStrokePreview(); } catch (_) {}
+    return r;
+  };
+  const sliders = () => ['penSizeSlider', 'dctSizeSlider'].map(id => document.getElementById(id)).filter(Boolean);
+  function syncUI() {
+    const v = window.penStrokeWidth || 5;
+    sliders().forEach(s => { if (!s.__drag) s.value = String(Math.round(toT(v) * RES)); s.setAttribute('aria-valuetext', fmt(v)); });
+    ['penSizeVal', 'dctSizeLabel'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(v); });
+    const d = document.getElementById('penSizeDot');
+    if (d && d.firstChild) { const z = Math.min(28, v + 2); d.firstChild.style.width = d.firstChild.style.height = z + 'px'; }
+  }
+  const setW = v => window.setPenStrokeWidth(snap(v));
+
+  sliders().forEach(s => {
+    s.removeAttribute('oninput'); s.oninput = null;
+    s.min = '0'; s.max = String(RES); s.step = '1';
+    // valor pelo próprio controle (teclado/acessibilidade) — o arraste é tratado abaixo
+    s.addEventListener('input', () => { if (!s.__drag) setW(toW(Number(s.value) / RES)); });
+    // arraste com ajuste fino: a velocidade do movimento decide o quanto a espessura anda
+    s.addEventListener('pointerdown', e => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      e.preventDefault(); e.stopPropagation();
+      const r = s.getBoundingClientRect(), pad = 8, w = Math.max(20, r.width - 2 * pad);
+      const tNow = toT(window.penStrokeWidth || 5);
+      const thumbX = r.left + pad + tNow * w;
+      let t = tNow;
+      if (Math.abs(e.clientX - thumbX) > 12) { t = Math.max(0, Math.min(1, (e.clientX - r.left - pad) / w)); setW(toW(t)); t = toT(window.penStrokeWidth); }
+      s.__drag = { id: e.pointerId, x: e.clientX, tm: performance.now(), t, w, v: 0 };
+      s.__startDrag();
+      s.value = String(Math.round(t * RES));
+      s.focus({ preventScroll: true });
+    });
+    // o arraste é acompanhado pela janela inteira (não depende de o controle manter a "captura" do ponteiro,
+    // que o navegador às vezes solta logo no primeiro movimento — o arraste lento parecia não funcionar)
+    const onMove = e => {
+      const D = s.__drag; if (!D || e.pointerId !== D.id) return;
+      e.preventDefault();
+      const now = performance.now(), dx = e.clientX - D.x, dt = Math.max(1, now - D.tm);
+      D.x = e.clientX; D.tm = now;
+      D.v = D.v * 0.6 + (Math.abs(dx) / dt) * 0.4;                          // velocidade suavizada (px/ms)
+      // devagar (< 0,08 px/ms) anda 20% do movimento; rápido (> 0,7 px/ms) acompanha o dedo/caneta
+      const k = Math.max(0, Math.min(1, (D.v - 0.08) / 0.62)), gain = 0.2 + 0.8 * k;
+      D.t = Math.max(0, Math.min(1, D.t + (dx / D.w) * gain));
+      s.value = String(Math.round(D.t * RES));
+      const nv = snap(toW(D.t));
+      if (nv !== window.penStrokeWidth) setW(nv);
+    };
+    const onEnd = e => {
+      const D = s.__drag; if (!D || (e && e.pointerId !== D.id)) return;
+      s.__drag = null;
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('pointerup', onEnd, true);
+      window.removeEventListener('pointercancel', onEnd, true);
+      syncUI();
+    };
+    s.__startDrag = () => {
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup', onEnd, true);
+      window.addEventListener('pointercancel', onEnd, true);
+    };
+    // setas: um passo por toque · roda do mouse: um passo por "clique" da roda
+    s.addEventListener('keydown', e => {
+      const dir = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 1 : (e.key === 'ArrowLeft' || e.key === 'ArrowDown') ? -1 : 0;
+      if (!dir) return;
+      e.preventDefault(); e.stopPropagation();
+      const v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir));
+    });
+    s.addEventListener('wheel', e => {
+      e.preventDefault();
+      const dir = e.deltaY < 0 ? 1 : -1, v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir));
+    }, { passive: false });
+    // botões − e + (segurar repete)
+    const mk = (dir, txt, title) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ws-btn'; b.textContent = txt; b.title = title; b.setAttribute('aria-label', title);
+      let t1 = 0, t2 = 0;
+      const stepOnce = () => { const v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir)); };
+      const stop = () => { clearTimeout(t1); clearInterval(t2); };
+      b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); stepOnce(); stop(); t1 = setTimeout(() => { t2 = setInterval(stepOnce, 90); }, 420); });
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
+      b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stepOnce(); } });
+      return b;
+    };
+    s.parentNode.insertBefore(mk(-1, '−', 'Diminuir espessura'), s);
+    s.parentNode.insertBefore(mk(+1, '+', 'Aumentar espessura'), s.nextSibling);
+  });
+  syncUI();
+})();
+
+</script>
+<script>
 
 /* =====================================================================
    CAMADA TABLET — interface por toque, arquivos, salvamento automático
@@ -16117,7 +16255,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 10.3 · 03/11/2026 22:29';
+  window.APP_BUILD = 'Tablet 10.4 · 03/11/2026 22:47';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16183,7 +16321,7 @@ async function sdxRunImport() {
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 10.3 · 03/11/2026 22:29</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 10.4 · 03/11/2026 22:47</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16273,7 +16411,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 10.3 · 03/11/2026 22:29</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 10.4 · 03/11/2026 22:47</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
