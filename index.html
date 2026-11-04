@@ -18,17 +18,21 @@
   const SAFE_DIALOGS = ['shortcutsDlg', 'exportStatsDlg', 'appModalDlg', 'nodeImpDlg', 'sdocxDlg'];   // janelas só de leitura/escolha
   window.__outsideClose = window.__outsideClose || [];
   const isOpen = el => !!el && el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+  // v11.3: lista "viva" dos elementos com a classe .open (o navegador mantém pronta). Antes, cada toque da caneta
+  // varria o documento inteiro com querySelector — num mapa grande, milhares de traços — antes do 1º ponto de tinta.
+  const OPEN = document.getElementsByClassName('open');
+  const openOf = sel => { const r = []; for (let i = 0; i < OPEN.length; i++) if (OPEN[i].matches(sel)) r.push(OPEN[i]); return r; };
   window.addEventListener('pointerdown', e => {
     const t = e.target; if (!t || !t.closest) return;
     const inside = sel => !!t.closest(sel);
-    const anyOpen = () => !!(document.querySelector('.tb-popover.open,.pd-fly.open,#nodeStyleDrawer.open,#tabMore.open,#linkPanel.open') ||
+    const anyOpen = () => !!(openOf('.tb-popover,.pd-fly,#nodeStyleDrawer,#tabMore,#linkPanel').length ||
       (document.getElementById('contextMenu') && !['', 'none'].includes(document.getElementById('contextMenu').style.display)));
     const was = anyOpen();
     try {
       // menus da barra de cima (Arquivo, Layout, Alinhar, Aparência, Snap…)
-      if (document.querySelector('.tb-popover.open') && !inside('.tb-dropdown') && !inside('.tb-popover') && typeof closeAllToolbarPopovers === 'function') closeAllToolbarPopovers();
+      if (openOf('.tb-popover').length && !inside('.tb-dropdown') && !inside('.tb-popover') && typeof closeAllToolbarPopovers === 'function') closeAllToolbarPopovers();
       // painéis da barra lateral de canetas (formas, cor/espessura)
-      if (!inside('.pd-anchor')) document.querySelectorAll('.pd-fly.open').forEach(x => x.classList.remove('open'));
+      if (!inside('.pd-anchor')) openOf('.pd-fly').forEach(x => x.classList.remove('open'));
       // menu de contexto
       const cm = document.getElementById('contextMenu');
       if (cm && cm.style.display && cm.style.display !== 'none' && !inside('#contextMenu') && typeof hideContextMenu === 'function') hideContextMenu();
@@ -280,13 +284,15 @@
       else if (P.armed && P.armSrc === 'bits') { P.armed = false; P.armSrc = null; }      // soltou o botão no meio do traço
     }
     setFlag();
-    const A = P.active, wantEraser = P.armed, canInk = penRouting();
+    // v11.3: penRouting() usa getComputedStyle (força recalcular o estilo da página inteira); antes rodava a CADA evento
+    // da caneta — agora só quando um traço começa ou troca de tinta/borracha
+    const A = P.active, wantEraser = P.armed, canInk = () => penRouting();
     if (A && !contact) strokeEnd(e, cancelled);
-    else if (!A && contact) { if (wantEraser || canInk) strokeStart(e, wantEraser); }
+    else if (!A && contact) { if (wantEraser || canInk()) strokeStart(e, wantEraser); }
     else if (A && contact) {
       if (wantEraser !== A.eraser) {                                  // botão apertado/solto no meio do traço: troca na hora
         strokeEnd(e, false);
-        if (wantEraser || canInk) strokeStart(e, wantEraser);
+        if (wantEraser || canInk()) strokeStart(e, wantEraser);
       } else strokeMove(e);
     }
     if (isEnd) { if (P.active) strokeEnd(e, cancelled); P.down = false; P.armed = false; P.armSrc = null; P.byDown = false; P.hoverBtn = false; setFlag(); }
@@ -530,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.2</title>
+<title>MindMap Studio — Tablet 11.3</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -5617,13 +5623,70 @@ function __snapDrawing(d) {
   if (Array.isArray(d.items)) c.items = d.items.map(__cloneLvl);
   return c;
 }
+/* v11.3: cópia para o Desfazer REAPROVEITADA. Antes cada traço copiava os ~14 mil traços de um mapa grande
+   (+3,5 MB e ~30 ms no PC; bem mais no tablet), e com 50 passos de desfazer a memória crescia ~175 MB —
+   o que gerava as coletas de lixo longas (travadas de 0,2–0,6 s) no meio da escrita.
+   Agora, se um desenho não mudou desde a última cópia (mesmos valores, mesmos itens, mesmos pontos), a cópia
+   anterior é reutilizada. A conferência é feita campo a campo (sem criar nada na memória). Só vale para CRIAR
+   cópias; restaurar (desfazer/refazer) continua gerando objetos novos. */
+const __snapCache = new WeakMap();
+// Entrada do cache: a cópia + as referências originais (refs) + quantos campos havia (n, e nk para objetos internos).
+// Uma lista (ex.: pontos) que é a MESMA lista, com o mesmo tamanho e as mesmas pontas, não mudou — nenhum código troca
+// pontos no meio de uma lista já gravada (edições criam listas novas; acrescentar muda o tamanho).
+function __mkSnapEntry(src, clone) {
+  let n = 0; const nk = {};
+  for (const k in src) { n++; const v = src[k]; if (v && typeof v === 'object' && !Array.isArray(v)) { let m = 0; for (const kk in v) m++; nk[k] = m; } }
+  return { clone, refs: { ...src }, n, nk };
+}
+function __snapUnchanged(src, e) {
+  const c = e.clone, r = e.refs;
+  let n = 0;
+  for (const k in src) {
+    n++;
+    const v = src[k];
+    if (v !== r[k]) return false;                                   // valor trocado, ou lista/objeto substituído
+    if (v && typeof v === 'object') {
+      const w = c[k];
+      if (Array.isArray(v)) {
+        if (k === 'items') continue;                                  // itens do desenho: conferidos um a um à parte
+        if (v.length !== w.length || (v.length && (v[0] !== w[0] || v[v.length - 1] !== w[w.length - 1]))) return false;
+      } else {                                                        // objeto interno (bbox, deslocamentos…) alterado no lugar?
+        let m = 0;
+        for (const kk in v) { m++; if (v[kk] !== w[kk]) return false; }
+        if (m !== e.nk[k]) return false;
+      }
+    }
+  }
+  return n === e.n;
+}
+function __snapItemCached(it) {
+  if (!it || typeof it !== 'object') return it;
+  const e = __snapCache.get(it);
+  if (e && __snapUnchanged(it, e)) return e.clone;
+  const nc = __cloneLvl(it);
+  __snapCache.set(it, __mkSnapEntry(it, nc));
+  return nc;
+}
+function __snapDrawingCached(d) {
+  if (!d || !Array.isArray(d.items)) return __snapDrawing(d);
+  const e = __snapCache.get(d);
+  if (e && e.clone.items.length === d.items.length && __snapUnchanged(d, e)) {
+    let ok = true;
+    for (let i = 0; i < d.items.length; i++) if (__snapItemCached(d.items[i]) !== e.clone.items[i]) { ok = false; break; }
+    if (ok) return e.clone;
+  }
+  const c = __cloneLvl(d);
+  c.items = d.items.map(__snapItemCached);
+  __snapCache.set(d, __mkSnapEntry(d, c));
+  return c;
+}
 function createFullSnapshot() {
   if (!root) return null;
   return {
     __v37Snapshot: true,
     tree: serializeNode(root),
     crossLinks: JSON.parse(JSON.stringify(crossLinks || [])),
-    drawings: (window.drawingsList || []).map(__snapDrawing),
+    drawings: (window.drawingsList || []).map(__snapDrawingCached),
     drawLinks: JSON.parse(JSON.stringify(window.drawLinksList || []))
   };
 }
@@ -9937,7 +10000,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.2",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.3",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9981,7 +10044,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.2 · 04/11/2026 09:59';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.3 · 04/11/2026 12:00';
  }
  document.body.classList.add('theme-dots');
 
@@ -13335,6 +13398,9 @@ window.runSimulatedPenTabletStroke = function() {
     const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     Object.assign(cv.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', display: 'block' });
+    // canvas de apoio do rascunho incremental (mesmo tamanho, fora da tela)
+    if (!fz) { fz = document.createElement('canvas'); fzx = fz.getContext('2d', { alpha: true }); }
+    if (fz.width !== w || fz.height !== h) { fz.width = w; fz.height = h; } else fzClear();
     return r;
   }
 
@@ -13345,36 +13411,134 @@ window.runSimulatedPenTabletStroke = function() {
     cv.style.display = 'none';
   }
 
+  /* v11.3 — RASCUNHO AO VIVO INCREMENTAL
+     Antes (v11.2) o traço INTEIRO era remontado e repintado a cada evento da S Pen (centenas por segundo):
+     a pintura ficava para trás da caneta e o fim da linha chegava ~0,5 s depois de levantar.
+     Agora: no máximo 1 pintura por quadro da tela; o trecho já estável fica "congelado" num canvas de apoio (fz)
+     e só a cauda (últimos pontos + ponta real/prevista) é refeita, numa região pequena (só o que mudou).
+     O custo de cada quadro fica o mesmo para um traço curto ou longo.
+     A opacidade/multiplicação é aplicada no canvas inteiro (CSS), por isso os pedaços sobrepostos não escurecem.
+     Modo antigo (repinta o traço todo a cada quadro, como na v11.1): window.penLiveMode = 'full' (menu ⋯). */
+  let fz = null, fzx = null;
+  const FREEZE_AT = 40, KEEP = 12, OV = 4;
+  function fzClear() { if (!fz) return; fzx.setTransform(1, 0, 0, 1, 0, 0); fzx.clearRect(0, 0, fz.width, fz.height); }
+  function liveStyle(s) {
+    const lStyle = s.tool === 'dashed' ? 'dashed' : (window.penLineStyle || 'solid');
+    return {
+      col: s.tool === 'laser' ? '#ef4444' : window.penStrokeColor,
+      lStyle,
+      outline: (s.tool === 'fountain' || (s.tool === 'brush' && window.penBrushProfile !== 'watercolor')) && lStyle === 'solid',
+      profile: window.penBrushProfile || 'round'
+    };
+  }
+  const worldTf = g => g.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * pan.x, dpr * pan.y);
+  function applyStyle(g, s, st) {
+    g.shadowColor = s.tool === 'laser' ? '#ef4444' : 'transparent';
+    g.shadowBlur = s.tool === 'laser' ? 12 * dpr : 0;
+    if (st.outline) { g.fillStyle = st.col; return; }
+    g.strokeStyle = st.col;
+    g.lineWidth = s.size;
+    g.lineCap = (s.tool !== 'highlighter' && st.profile === 'chisel') ? 'butt' : 'round';
+    g.lineJoin = 'round';
+    if (st.lStyle === 'dashed') g.setLineDash([Math.max(6, s.size * 2.4), Math.max(4, s.size * 1.6)]);
+    else if (st.lStyle === 'dotted') g.setLineDash([Math.max(1.5, s.size * 0.6), Math.max(4, s.size * 1.8)]);
+    else g.setLineDash([]);
+  }
+  // prevPt: ponto anterior ao pedaço (a espessura que depende da velocidade continua certa na emenda)
+  function drawPts(g, s, st, pts, midStroke, prevPt) {
+    if (!st.outline) { g.stroke(new Path2D(buildSmoothCenterlinePath(pts, s.tool === 'freeform'))); return; }
+    window.__inkLiveDraw = true;
+    window.__inkLiveNoTaperIn = !!midStroke;
+    window.__inkLivePrevPt = prevPt || null;
+    try { g.fill(new Path2D(buildInkOutline(pts, s.size, s.tool, st.profile))); }
+    finally { window.__inkLiveDraw = false; window.__inkLiveNoTaperIn = false; window.__inkLivePrevPt = null; }
+  }
+  function canIncremental(s, st) {
+    if (window.penLiveMode === 'full') return false;
+    if (s.tool === 'laser' || s.tool === 'freeform' || s.straight || s.ortho || s.shape) return false;
+    if (st.lStyle !== 'solid') return false;                       // tracejado/pontilhado: o padrão depende do traço inteiro
+    if (st.outline && !(window.inkUsesV10 && window.inkUsesV10(s.tool, st.profile))) return false;
+    return true;
+  }
+  // o afinamento de entrada da tinteiro/pincel precisa estar inteiro no 1º pedaço congelado
+  function taperOK(s, st, nk) {
+    if (!st.outline) return true;
+    const need = (s.tool === 'brush' ? 9 : 5) + 3, minD = Math.max(0.5, s.size * 0.07);
+    let c = 1, a = s.pts[0];
+    for (let i = 1; i <= nk && c < need; i++) { const b = s.pts[i]; if (Math.hypot(b.x - a.x, b.y - a.y) >= minD) { c++; a = b; } }
+    return c >= need;
+  }
+  function devRect(pts, padCss) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      const q = pts[i];
+      if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x;
+      if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y;
+    }
+    const X0 = Math.max(0, Math.floor((x0 * scale + pan.x - padCss) * dpr)), Y0 = Math.max(0, Math.floor((y0 * scale + pan.y - padCss) * dpr));
+    const X1 = Math.min(cv.width, Math.ceil((x1 * scale + pan.x + padCss) * dpr)), Y1 = Math.min(cv.height, Math.ceil((y1 * scale + pan.y + padCss) * dpr));
+    return { x0: X0, y0: Y0, x1: Math.max(X0, X1), y1: Math.max(Y0, Y1) };
+  }
+  function renderFull(s, st) {
+    if (s.fk) { s.fk = 0; fzClear(); }                             // virou forma/linha reta: sai do modo incremental
+    s.view = null; s.prevR = null;
+    const pts = s.pred.length ? s.pts.concat(s.pred) : s.pts;
+    cx.setTransform(1, 0, 0, 1, 0, 0);
+    cx.clearRect(0, 0, cv.width, cv.height);
+    if (s.m) s.m.px += cv.width * cv.height;
+    worldTf(cx); applyStyle(cx, s, st);
+    drawPts(cx, s, st, pts, false, null);
+  }
+  function renderIncremental(s, st) {
+    const view = pan.x + ',' + pan.y + ',' + scale + ',' + cv.width + 'x' + cv.height;
+    if (s.view !== view) {                                         // 1º quadro, zoom ou arrasto durante o traço: recomeça
+      s.view = view; s.fk = 0; s.prevR = null; fzClear();
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.clearRect(0, 0, cv.width, cv.height);
+    }
+    const n = s.pts.length;
+    if (n - s.fk > FREEZE_AT) {
+      const nk = n - KEEP;
+      if (s.fk > 0 || taperOK(s, st, nk)) {
+        const a = Math.max(0, s.fk - OV);
+        fzx.setTransform(1, 0, 0, 1, 0, 0); worldTf(fzx); applyStyle(fzx, s, st);
+        drawPts(fzx, s, st, s.pts.slice(a, nk + 1), a > 0, a > 0 ? s.pts[a - 1] : null);
+        s.fk = nk;
+        if (s.m) s.m.frz++;
+      }
+    }
+    const a = Math.max(0, s.fk - OV);
+    const tail = s.pts.slice(a);
+    for (const q of s.pred) tail.push(q);
+    if (!tail.length) return;
+    const pad = s.size * scale * (st.outline ? 1.15 : 0.6) + 3;
+    const r = devRect(tail, pad), P = s.prevR;
+    const d = P ? { x0: Math.min(r.x0, P.x0), y0: Math.min(r.y0, P.y0), x1: Math.max(r.x1, P.x1), y1: Math.max(r.y1, P.y1) } : r;
+    s.prevR = r;
+    const dw = d.x1 - d.x0, dh = d.y1 - d.y0;
+    cx.setTransform(1, 0, 0, 1, 0, 0);
+    if (dw > 0 && dh > 0) {
+      cx.clearRect(d.x0, d.y0, dw, dh);
+      if (s.fk > 0) cx.drawImage(fz, d.x0, d.y0, dw, dh, d.x0, d.y0, dw, dh);
+    }
+    if (s.m) s.m.px += dw * dh;
+    worldTf(cx); applyStyle(cx, s, st);
+    drawPts(cx, s, st, tail, a > 0, a > 0 ? s.pts[a - 1] : null);
+  }
+
   function renderLiveFrame() {
     const s = ses;
     if (!s || s.isShape) return;
     if (s.raf) { try { cancelAnimationFrame(s.raf); } catch (_) {} }
     s.raf = 0;
-    const pts = s.pred.length ? s.pts.concat(s.pred) : s.pts;
-    cx.setTransform(1, 0, 0, 1, 0, 0);
-    cx.clearRect(0, 0, cv.width, cv.height);
-    cx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * pan.x, dpr * pan.y);
-
-    const col = s.tool === 'laser' ? '#ef4444' : window.penStrokeColor;
-    cx.shadowColor = s.tool === 'laser' ? '#ef4444' : 'transparent';
-    cx.shadowBlur = s.tool === 'laser' ? 12 * dpr : 0;
-
-    const lStyle = s.tool === 'dashed' ? 'dashed' : (window.penLineStyle || 'solid');
-    const useOutline = (s.tool === 'fountain' || (s.tool === 'brush' && window.penBrushProfile !== 'watercolor')) && lStyle === 'solid';
-
-    if (!useOutline) {
-      cx.strokeStyle = col;
-      cx.lineWidth = s.size;
-      cx.lineCap = (s.tool !== 'highlighter' && window.penBrushProfile === 'chisel') ? 'butt' : 'round';
-      cx.lineJoin = 'round';
-      if (lStyle === 'dashed') cx.setLineDash([Math.max(6, s.size * 2.4), Math.max(4, s.size * 1.6)]);
-      else if (lStyle === 'dotted') cx.setLineDash([Math.max(1.5, s.size * 0.6), Math.max(4, s.size * 1.8)]);
-      else cx.setLineDash([]);
-      cx.stroke(new Path2D(buildSmoothCenterlinePath(pts, s.tool === 'freeform')));
-    } else {
-      cx.fillStyle = col;
-      window.__inkLiveDraw = true;
-      try { cx.fill(new Path2D(buildInkOutline(pts, s.size, s.tool, window.penBrushProfile || 'round'))); } finally { window.__inkLiveDraw = false; }
+    const t0 = performance.now();
+    const st = liveStyle(s), inc = canIncremental(s, st);
+    if (inc) renderIncremental(s, st); else renderFull(s, st);
+    const m = s.m;
+    if (m) {
+      const dt = performance.now() - t0;
+      m.fr++; m.frMs += dt; if (dt > m.frMax) m.frMax = dt;
+      if (!inc) m.full++;
     }
   }
 
@@ -13596,7 +13760,9 @@ window.runSimulatedPenTabletStroke = function() {
       hud: 0,
       ortho: !!(window.penStraightLineLock || e.shiftKey),
       straight: !!window.penStraightFree && !(window.penStraightLineLock || e.shiftKey),
-      axis: null
+      axis: null,
+      fk: 0, view: null, prevR: null,                  // rascunho incremental: pontos já congelados / vista / região anterior
+      m: newMeter(e)
     };
     addSample(e, true);
     renderLiveFrame();
@@ -13639,7 +13805,8 @@ window.runSimulatedPenTabletStroke = function() {
     }
 
     const list = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
-    (list.length ? list : [ev]).forEach(c => { const ts = c.__ts != null ? c.__ts : c.timeStamp; if (ses.rawT && ts <= ses.rawT) return; addSample(c, false); });
+    (list.length ? list : [ev]).forEach(c => addSample(c, false));
+    if (ses.m) meterEvent(ses.m, ev, list.length || 1);
     ses.pred = [];
     // ponta ao vivo = posição REAL da caneta (o filtro de suavização fica só no corpo do traço) + previsão do Chrome
     if (!ses.ortho && !ses.straight && !ses.shape) {
@@ -13697,43 +13864,53 @@ window.runSimulatedPenTabletStroke = function() {
       ses.hud = now;
       updatePenPressureHUD(ev.pointerType === 'pen' ? ev.pressure : 0, ev.pointerType, ev.tiltX || 0, ev.tiltY || 0, ev.twist || 0);
     }
-    // v11.2: desenha NA HORA em que a caneta chega (como o canvas de baixa latência espera), sem esperar o próximo quadro.
-    // Se o aparelho ficar lento (traço muito longo), volta sozinho ao modo por quadro para não travar.
-    if (ses.slow) { if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame); }
-    else {
-      const t0 = performance.now();
-      renderLiveFrame();
-      ses.cost = (ses.cost || 0) * 0.7 + (performance.now() - t0) * 0.3;
-      if (ses.cost > 7) ses.slow = true;
-    }
+    // v11.3: no máximo 1 pintura por quadro da tela (o Chrome já entrega o pointermove alinhado ao quadro, com todos
+    // os pontos intermediários em getCoalescedEvents — nenhum ponto se perde). A v11.2 pintava a cada evento e também
+    // no pointerrawupdate: centenas de pinturas por segundo que a tela não mostra e que enchiam a fila de pintura.
+    if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
   }, { passive: true });
 
-  // v11.2: pontos da caneta chegam ASSIM QUE NASCEM (pointerrawupdate), sem esperar o ritmo da tela (~90 Hz).
-  // O pointermove normal continua valendo: ele só completa o que o rawupdate ainda não desenhou. Desligar: window.penRawUpdate = false
-  window.addEventListener('pointerrawupdate', ev => {
-    const S = ses;
-    if (!S || S.isShape || S.ortho || S.straight || S.shape || window.penRawUpdate === false) return;
-    if (ev.pointerId !== S.id || ev.pointerType !== 'pen') return;
-    const list = (typeof ev.getCoalescedEvents === 'function' && ev.getCoalescedEvents().length) ? ev.getCoalescedEvents() : [ev];
-    let last = null;
-    for (const c of list) {
-      if (!(c.pressure > 0) || c.timeStamp <= (S.rawT || 0)) continue;
-      addSample(c, false); S.rawT = c.timeStamp; last = c;
-    }
-    if (!last) return;
-    S.pred = [{ x: (last.clientX - S.r.left - pan.x) / scale, y: (last.clientY - S.r.top - pan.y) / scale, p: S.ps, tx: last.tiltX || 0, ty: last.tiltY || 0 }];
-    if (S.slow) { if (!S.raf) S.raf = requestAnimationFrame(renderLiveFrame); }
-    else {
-      const t0 = performance.now();
-      renderLiveFrame();
-      S.cost = (S.cost || 0) * 0.7 + (performance.now() - t0) * 0.3;
-      if (S.cost > 7) S.slow = true;
-    }
-  }, { passive: true });
+  /* ---------- v11.3: medidor da caneta (menu ⋯ → 📊). Custa quase nada: só soma números; o texto é montado ao soltar. ---------- */
+  const meterCbs = [];
+  window.__penMeter = { last: null, history: [], onStroke: cb => meterCbs.push(cb) };
+  let lastPenEnd = -1e9;
+  window.__penBusy = () => !!ses || performance.now() - lastPenEnd < 2500;
+  function newMeter(e) {
+    return { t0: performance.now(), ev: 0, pts: 0, dly: 0, dlyMax: 0, dlyN: 0, gap: 0, lastEv: 0, fr: 0, frMs: 0, frMax: 0, frz: 0, px: 0, full: 0, mode: window.penLiveMode === 'full' ? 'antigo' : 'rápido' };
+  }
+  function meterEvent(m, ev, n) {
+    const now = performance.now();
+    m.ev++; m.pts += n;
+    const ts = ev.__ts != null ? ev.__ts : ev.timeStamp;
+    if (ts > 0 && ts <= now + 1) { const d = now - ts; m.dly += d; m.dlyN++; if (d > m.dlyMax) m.dlyMax = d; }
+    if (m.lastEv && now - m.lastEv > 34) m.gap++;
+    m.lastEv = now;
+  }
+  function meterFinish(m, s, endMs) {
+    const dur = Math.max(1, performance.now() - m.t0);
+    const tUp = performance.now();
+    const res = {
+      tool: s.tool, mode: m.mode, ms: Math.round(dur), pts: s.pts.length,
+      hz: Math.round(m.pts / (dur / 1000)), evHz: Math.round(m.ev / (dur / 1000)),
+      dlyAvg: m.dlyN ? +(m.dly / m.dlyN).toFixed(1) : 0, dlyMax: Math.round(m.dlyMax), gaps: m.gap,
+      frames: m.fr, frAvg: m.fr ? +(m.frMs / m.fr).toFixed(2) : 0, frMax: +m.frMax.toFixed(1), frz: m.frz, full: m.full,
+      pxFrame: m.fr ? Math.round(m.px / m.fr) : 0, canvasPx: cv ? cv.width * cv.height : 0,
+      endMs: +endMs.toFixed(1), paintMs: null
+    };
+    window.__penMeter.last = res;
+    const H = window.__penMeter.history; H.push(res); if (H.length > 30) H.shift();
+    // levantar a caneta → próxima tela pintada (mostra se a tela ficou presa depois do traço)
+    requestAnimationFrame(() => setTimeout(() => {
+      res.paintMs = Math.round(performance.now() - tUp);
+      meterCbs.forEach(cb => { try { cb(res); } catch (_) {} });
+    }, 0));
+  }
 
   function finishSession(ev) {
     if (!ses || ev.pointerId !== ses.id) return;
     const s = ses;
+    const tEnd0 = performance.now();
+    lastPenEnd = tEnd0;
     ses = null;
     if (s.raf) cancelAnimationFrame(s.raf);
     try { svg.releasePointerCapture(ev.pointerId); } catch (_) {}
@@ -13815,7 +13992,8 @@ window.runSimulatedPenTabletStroke = function() {
       return;
     }
 
-    saveState();
+    // v11.3: a cópia do mapa para o Desfazer sai do instante de levantar a caneta (ver deferUndo abaixo)
+    const undoRec = deferUndoBegin();
     const isClosed = !!(window.penAutoFillFreehand || s.tool === 'freeform');
     const effFillStyle = isClosed ? (window.penFillStyle === 'none' ? 'translucent' : window.penFillStyle) : 'none';
     const item = {
@@ -13849,6 +14027,7 @@ window.runSimulatedPenTabletStroke = function() {
       bb.y <= prev.bbox.y + prev.bbox.h + 42 && bb.y + bb.h >= prev.bbox.y - 42;
 
     if (canMerge) {
+      undoRec.merge = { id: prev.id, n: prev.items.length, bbox: { ...prev.bbox } };
       prev.items.push(item);
       const x0 = Math.min(prev.bbox.x, bb.x), y0 = Math.min(prev.bbox.y, bb.y);
       prev.bbox = { x: x0, y: y0, w: Math.max(prev.bbox.x + prev.bbox.w, bb.x + bb.w) - x0, h: Math.max(prev.bbox.y + prev.bbox.h, bb.y + bb.h) - y0 };
@@ -13867,8 +14046,10 @@ window.runSimulatedPenTabletStroke = function() {
         d.attachedOffset = { dx: -host.x, dy: -host.y };
       }
       window.drawingsList.push(d);
+      undoRec.addId = d.id;
       lastStrokeGroup = { t: now, obj: d };
     }
+    deferUndoCommit(undoRec);
 
     // Antes: renderDrawings() reconstruía TODOS os desenhos a cada traço (≈0,4–0,9 s com mapas grandes)
     if (canMerge) replaceDrawingDOM(prev, [prev]); else replaceDrawingDOM(null, [lastStrokeGroup.obj]);
@@ -13880,10 +14061,60 @@ window.runSimulatedPenTabletStroke = function() {
     }, 90)));
     scheduleMinimapDraw();
     scheduleLocalAutoBackup();
+    lastPenEnd = performance.now();
+    if (s.m) meterFinish(s.m, s, lastPenEnd - tEnd0);
   }
 
   window.addEventListener('pointerup', finishSession, true);
   window.addEventListener('pointercancel', finishSession, true);
+
+  /* ---------- v11.3: Desfazer adiado ----------
+     saveState() copia o mapa inteiro (num mapa grande, dezenas de ms no tablet) e rodava NO INSTANTE de levantar a caneta,
+     atrasando o aparecimento do traço. Agora o traço entra na hora e a cópia "de antes do traço" é montada logo depois que
+     a tela foi pintada: pega o estado atual e tira dele o traço novo (ou o item que entrou num grupo de palavras).
+     Qualquer outra ação que use o Desfazer (desfazer, refazer, borracha, mover…) completa a cópia pendente ANTES —
+     a ordem e o conteúdo da pilha ficam exatamente iguais aos de antes. */
+  let undoQ = [], undoTimer = 0;
+  const _createSnap = window.createFullSnapshot;
+  function deferUndoBegin() {
+    redoStack = [];
+    return { root, addId: null, merge: null };
+  }
+  function deferUndoCommit(rec) {
+    undoQ.push(rec);
+    markUnsavedChanges(true);
+    clearTimeout(undoTimer);
+    const tick = () => { if (ses) { undoTimer = setTimeout(tick, 150); return; } flushUndo(); };
+    requestAnimationFrame(() => { undoTimer = setTimeout(tick, 0); });
+  }
+  function flushUndo() {
+    clearTimeout(undoTimer);
+    if (!undoQ.length) return;
+    const Q = undoQ; undoQ = [];
+    if (Q[0].root !== root) return;                                // outro mapa foi aberto: descarta
+    let snap = _createSnap();
+    if (!snap) return;
+    const out = [];
+    for (let i = Q.length - 1; i >= 0; i--) {                       // do traço mais novo para o mais antigo
+      const r = Q[i];
+      snap = { ...snap, drawings: snap.drawings.slice() };
+      if (r.addId) snap.drawings = snap.drawings.filter(d => d.id !== r.addId);
+      if (r.merge) {
+        const k = snap.drawings.findIndex(d => d.id === r.merge.id);
+        if (k >= 0) snap.drawings[k] = { ...snap.drawings[k], items: snap.drawings[k].items.slice(0, r.merge.n), bbox: { ...r.merge.bbox } };
+      }
+      out.push(snap);
+    }
+    for (let i = out.length - 1; i >= 0; i--) { undoStack.push(out[i]); if (undoStack.length > MAX_UNDO) undoStack.shift(); }
+    try { updateUndoButtons(); } catch (_) {}
+    try { if (window.__tab && window.__tab.syncDock) window.__tab.syncDock(); } catch (_) {}
+  }
+  window.__flushPendingUndo = flushUndo;
+  window.createFullSnapshot = function () { flushUndo(); return _createSnap.apply(this, arguments); };
+  ['undo', 'redo'].forEach(fn => {
+    const o = window[fn]; if (typeof o !== 'function') return;
+    window[fn] = function () { flushUndo(); return o.apply(this, arguments); };
+  });
 
   // Cursor circular dinâmico (#penCursor)
   const ring = document.createElement('div');
@@ -13893,6 +14124,8 @@ window.runSimulatedPenTabletStroke = function() {
   const isRingActive = () => canvasToolMode === 'draw' && (FREE_TOOLS.includes(window.penSubTool) || window.penSubTool === 'eraser');
 
   svg.addEventListener('pointermove', e => {
+    // v11.3: escrevendo, o círculo não aparece (no tablet fica oculto) — não mexe no estilo a cada ponto da caneta
+    if (ses && !ses.isShape && document.body.classList.contains('tab')) return;
     if (!isRingActive() || e.pointerType === 'touch') {
       ring.style.display = 'none';
       return;
@@ -16086,11 +16319,12 @@ async function sdxRunImport() {
 
   // espessura "crua" no ponto i (sem afinamento final) — usada ao vivo e no definitivo
   function rawWidth(M, size, pts, i) {
-    const q = pts[i], prev = pts[i - 1] || q;
+    // v11.3: no rascunho incremental cada pedaço continua o anterior (ponto anterior + sem afinar a entrada de novo)
+    const q = pts[i], prev = pts[i - 1] || (i === 0 && window.__inkLivePrevPt) || q;
     const d = Math.hypot(q.x - prev.x, q.y - prev.y);
     const speed = clamp((d / size - 0.35) / 2.2, 0, 1);
     let w = size * M.F(pnOf(q)) * (1 - M.sp * speed);
-    if (i < M.tIn) w *= M.t0 + (1 - M.t0) * (i / M.tIn);
+    if (i < M.tIn && !window.__inkLiveNoTaperIn) w *= M.t0 + (1 - M.t0) * (i / M.tIn);
     return Math.max(0.6, w);
   }
   window.inkLiveWidth = function (penType, profile, size, pts, i, prevW) {
@@ -16461,7 +16695,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.2 · 04/11/2026 09:59';
+  window.APP_BUILD = 'Tablet 11.3 · 04/11/2026 12:00';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16525,8 +16759,10 @@ async function sdxRunImport() {
     <button data-act="fit">⊡ Enquadrar o mapa</button>
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
+    <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
+    <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.2 · 04/11/2026 09:59</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 11.3 · 04/11/2026 12:00</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16541,6 +16777,60 @@ async function sdxRunImport() {
   $('tabShapes').checked = window.shapeRecog;
   $('tabShapes').onchange = e => { window.shapeRecog = prefs.shapeRecog = e.target.checked; savePrefs(); };
   $('tabHoldAll').onchange = e => { window.holdStraightAll = prefs.holdAll2 = e.target.checked; savePrefs(); };
+
+  /* ---------- v11.3: modo do rascunho + medidor da caneta ---------- */
+  window.penLiveMode = prefs.liveOld ? 'full' : 'inc';
+  $('tabLiveOld').checked = !!prefs.liveOld;
+  $('tabLiveOld').onchange = e => {
+    prefs.liveOld = e.target.checked; savePrefs();
+    window.penLiveMode = prefs.liveOld ? 'full' : 'inc';
+    status.textContent = prefs.liveOld ? '🐢 Rascunho no modo ANTIGO (repinta tudo). Compare no medidor 📊.' : '⚡ Rascunho no modo RÁPIDO (incremental).';
+  };
+  const meterBox = document.createElement('div');
+  meterBox.id = 'tabMeterBox';
+  // abaixo das barras de cima, à direita; a caneta escreve "através" dele (só o botão 📋 recebe toque)
+  meterBox.style.cssText = 'position:fixed;top:176px;right:8px;z-index:60;display:none;max-width:min(92vw,400px);padding:7px 9px;border-radius:10px;' +
+    'background:rgba(15,23,42,.78);color:#e2e8f0;font:11.5px/1.45 system-ui,sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.2);pointer-events:none;user-select:none';
+  document.body.appendChild(meterBox);
+  const fmtStroke = r => {
+    const ok = v => v.dlyMax <= 40 && v.paintMs <= 60;
+    return `<b>${ok(r) ? '🟢' : (r.dlyMax <= 120 ? '🟡' : '🔴')} Último traço</b> (${r.tool}, modo ${r.mode}, ${r.ms} ms, ${r.pts} pts)<br>` +
+      `S Pen: <b>${r.hz}</b> pontos/s em ${r.evHz} eventos/s · pausas &gt;34 ms: <b>${r.gaps}</b><br>` +
+      `Atraso do evento: média <b>${r.dlyAvg}</b> ms · pior <b>${r.dlyMax}</b> ms<br>` +
+      `Pintura: ${r.frames} quadros · <b>${r.frAvg}</b> ms/quadro (pior ${r.frMax}) · área ${r.canvasPx ? Math.round(100 * r.pxFrame / r.canvasPx) : 0}% da tela<br>` +
+      `Levantar a caneta: gravar <b>${r.endMs}</b> ms · tela pronta em <b>${r.paintMs}</b> ms`;
+  };
+  const meterText = () => (window.__penMeter.history || []).map(r =>
+    `${r.tool}/${r.mode} ${r.ms}ms ${r.pts}pts ${r.hz}pt/s ${r.evHz}ev/s atraso ${r.dlyAvg}/${r.dlyMax}ms pausas ${r.gaps} quadro ${r.frAvg}/${r.frMax}ms x${r.frames} area ${r.pxFrame}/${r.canvasPx} fim ${r.endMs}ms tela ${r.paintMs}ms`).join('\n');
+  const showMeter = r => {
+    if (!prefs.meter) return;
+    const H = window.__penMeter.history.slice(-10);
+    const avg = k => (H.reduce((a, v) => a + (v[k] || 0), 0) / Math.max(1, H.length)).toFixed(1);
+    meterBox.innerHTML = fmtStroke(r) + `<div style="opacity:.75;margin-top:4px">Média dos últimos ${H.length}: atraso ${avg('dlyAvg')} ms · quadro ${avg('frAvg')} ms · tela pronta ${avg('paintMs')} ms</div>` +
+      '<button type="button" class="mt-copy" style="pointer-events:auto;margin-top:5px;padding:4px 10px;border:0;border-radius:7px;background:#2563eb;color:#fff;font:inherit">📋 Copiar números (cole na conversa)</button>';
+    meterBox.style.display = 'block';
+  };
+  window.__penMeter.onStroke(showMeter);
+  meterBox.onclick = e => {
+    if (!e.target.closest('.mt-copy')) return;
+    const txt = 'MindMap ' + window.APP_BUILD + '\n' + navigator.userAgent + '\n' + meterText();
+    const ok = () => { status.textContent = '📋 Números do medidor copiados — cole na conversa.'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => fallbackCopy(txt)); else fallbackCopy(txt);
+  };
+  $('tabMeter').checked = !!prefs.meter;
+  $('tabMeter').onchange = e => {
+    prefs.meter = e.target.checked; savePrefs();
+    if (prefs.meter) { meterBox.innerHTML = '📊 Medidor ligado — faça um traço com a S Pen.'; meterBox.style.display = 'block'; }
+    else meterBox.style.display = 'none';
+  };
+  if (prefs.meter) { meterBox.innerHTML = '📊 Medidor ligado — faça um traço com a S Pen.'; meterBox.style.display = 'block'; }
+
+  /* ---------- v11.3: cópia de segurança no localStorage desligada no tablet ----------
+     A cada traço, 1,5 s depois, o app transformava o mapa inteiro em texto (até 4,5 MB) e gravava no localStorage,
+     de uma vez só, travando a tela — muitas vezes bem no começo da palavra seguinte. Essa cópia NUNCA é lida
+     no tablet (a recuperação usa o salvamento automático do IndexedDB, que continua igual). */
+  window.scheduleLocalAutoBackup = function () {};
+  try { localStorage.removeItem('mm_v37_autobackup'); } catch (_) {}
   // borracha do botão: 'auto' (aprende sozinho se o aparelho avisa o contato) | 'hover' (apaga também no ar)
   T.btnHover = prefs.btnHover === true;
   T.btnContactOK = !!prefs.btnContactOK;
@@ -16615,7 +16905,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.2 · 04/11/2026 09:59</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 11.3 · 04/11/2026 12:00</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
@@ -16727,7 +17017,12 @@ async function sdxRunImport() {
     if (isDirty) {
       dirty = true;
       clearTimeout(saveTimer);
-      saveTimer = setTimeout(() => { ('requestIdleCallback' in window) ? requestIdleCallback(() => autosaveNow('pausa'), { timeout: 3000 }) : autosaveNow('pausa'); }, 8000);
+      // v11.3: nunca grava com a caneta no meio de um traço (ou logo depois dele): espera a mão parar de verdade
+      const pauseSave = () => {
+        if (window.__penBusy && window.__penBusy()) { saveTimer = setTimeout(pauseSave, 3000); return; }
+        autosaveNow('pausa');
+      };
+      saveTimer = setTimeout(() => { ('requestIdleCallback' in window) ? requestIdleCallback(pauseSave, { timeout: 3000 }) : pauseSave(); }, 8000);
     } else {
       idbGet('autosave').then(rec => { if (rec && !rec.clean) { rec.clean = true; return idbPut('autosave', rec); } }).catch(() => {});
     }

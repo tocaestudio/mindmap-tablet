@@ -64,3 +64,13 @@ SALVAR EM ARQUIVO
 No Android não existe "gravar por cima do mesmo arquivo" a partir do navegador:
 o 💾 Salvar baixa o arquivo (.json ou .html) na pasta Downloads. O salvamento
 automático mantém seu trabalho no tablet entre uma sessão e outra.
+
+NOVO NA 11.3 — CANETA MAIS LEVE
+-------------------------------
+  • O rascunho do traço é pintado aos pedaços: só a ponta é refeita a cada quadro da tela, por mais
+    longo que seja o traço (a 11.2 repintava o traço inteiro centenas de vezes por segundo).
+  • Ao levantar a caneta o traço aparece na hora; a cópia para o Desfazer é feita logo depois e
+    reaproveita o que não mudou (menos memória, menos travadas no meio da escrita).
+  • ⋯ → 📊 Medidor da caneta: mostra, a cada traço, pontos por segundo, atraso dos eventos, tempo de
+    pintura e quanto a tela demorou ao levantar a caneta. "📋 Copiar números" para colar na conversa.
+  • ⋯ → 🐢 Rascunho no modo antigo: para comparar com o modo novo no próprio tablet.
