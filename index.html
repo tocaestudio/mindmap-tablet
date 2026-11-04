@@ -420,7 +420,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 10.0</title>
+<title>MindMap Studio — Tablet 10.1</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2710,6 +2710,19 @@ body.tab #status { left: 50% !important; transform: translateX(-50%); max-width:
   border: 2px solid rgba(239,68,68,.85); background: rgba(239,68,68,.06); box-sizing: border-box; }
 #tabEraserRing.on { background: rgba(239,68,68,.22); }
 #tabDock [data-act="straight"].on { background: #dcfce7; border-color: #16a34a; }
+
+/* ===== 10.5 — barra lateral de canetas: nada transparente nem espremido ===== */
+#penStudioDock { --pd-bg: #ffffff; }
+body.theme-dark #penStudioDock { --pd-bg: #0f172a; }
+.pd-rail, .pd-fly { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+#penStudioDock .pd-fly { z-index: 30; }
+#penProps { width: 300px !important; }
+#penStudioDock .pd-fly button.chip { width: auto !important; height: auto !important; min-height: 30px; padding: 5px 10px !important; white-space: nowrap;
+  border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; line-height: 1.2; }
+#penStudioDock .pd-fly .pp-row select { min-width: 0; flex: 1; }
+body.theme-dark #penStudioDock .pd-fly button.chip { border-color: #475569; }
+/* tema escuro: o botão "Arquivo" tinha cor fixa escura (sumia no fundo escuro) */
+body.theme-dark #toolbar button[onclick*="popFile"] { color: #e2e8f0 !important; }
 
 </style>
 </head>
@@ -9732,7 +9745,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.0",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.1",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9776,7 +9789,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.0 · 03/11/2026 18:45';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.1 · 03/11/2026 21:29';
  }
  document.body.classList.add('theme-dots');
 
@@ -10090,9 +10103,8 @@ function togglePenStraightLineLock(forceVal) {
   const btn = document.getElementById('btnPenStraightLock');
   if (btn) {
     btn.classList.toggle('active', window.penStraightLineLock);
-    btn.innerHTML = window.penStraightLineLock
-      ? '📏 Linha Reta H/V (R): <b>ON</b>'
-      : '📏 Linha Reta H/V (R): OFF';
+    btn.setAttribute('data-tip', window.penStraightLineLock ? 'Linha reta H/V (R): LIGADA' : 'Linha reta H/V (R): desligada');
+    btn.setAttribute('aria-pressed', window.penStraightLineLock ? 'true' : 'false');
   }
   status.textContent = window.penStraightLineLock
     ? '📏 Modo Linha Reta (Horizontal / Vertical) ATIVADO! Seus grifos e traços sairão perfeitamente retos (Pressione R para desligar).'
@@ -13461,7 +13473,7 @@ window.runSimulatedPenTabletStroke = function() {
           S.pts = [p0, window.__straightEnd(p0, wx, wy, S.ps, 0, 0, scale)];
           if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) {}
           renderLiveFrame();
-        }, 450);
+        }, window.holdStraightMs || 450);
       }
     }
     const now = performance.now();
@@ -15819,7 +15831,7 @@ async function sdxRunImport() {
   };
   // pressão normalizada. A S Pen do Tab S10 Lite manda valores baixos (≈0,03–0,35 escrevendo normal):
   // desfaz o mapeamento linear do app (0,25 + 0,95·p) e aplica curva suave, para a espessura variar já na escrita leve
-  const pnOf = q => { const m = (q && q.p != null) ? q.p : 1; const raw = clamp((m - 0.25) / 0.95, 0, 1); return Math.pow(raw, 0.6); };
+  const pnOf = q => { const m = (q && q.p != null) ? q.p : 1; const raw = clamp((m - 0.25) / 0.95, 0, 1); return Math.pow(raw, window.inkPressureGamma || 0.6); };
   const usesV10 = (penType, profile) => penType === 'fountain' || (penType === 'brush' && (profile || 'round') === 'round');
   window.inkUsesV10 = usesV10;
 
@@ -15891,8 +15903,8 @@ async function sdxRunImport() {
 /* ===== Linha reta e marca-texto limpo (v10) ===== */
 (function straightAndHighlighter() {
   // fim da reta: encaixa na horizontal/vertical quando está a menos de 12° delas
-  const SNAP = Math.sin(12 * Math.PI / 180);
   window.__straightEnd = function (p0, wx, wy, p, tx, ty) {
+    const SNAP = Math.sin((window.straightSnapDeg != null ? window.straightSnapDeg : 12) * Math.PI / 180);
     const dx = wx - p0.x, dy = wy - p0.y, len = Math.hypot(dx, dy) || 1;
     let ex = wx, ey = wy;
     if (Math.abs(dy) / len < SNAP) ey = p0.y;
@@ -15936,7 +15948,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 10.0 · 03/11/2026 18:45';
+  window.APP_BUILD = 'Tablet 10.1 · 03/11/2026 21:29';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16001,7 +16013,7 @@ async function sdxRunImport() {
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 10.0 · 03/11/2026 18:45</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 10.1 · 03/11/2026 21:29</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16088,7 +16100,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 10.0 · 03/11/2026 18:45</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 10.1 · 03/11/2026 21:29</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
