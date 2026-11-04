@@ -74,3 +74,15 @@ NOVO NA 11.3 — CANETA MAIS LEVE
   • ⋯ → 📊 Medidor da caneta: mostra, a cada traço, pontos por segundo, atraso dos eventos, tempo de
     pintura e quanto a tela demorou ao levantar a caneta. "📋 Copiar números" para colar na conversa.
   • ⋯ → 🐢 Rascunho no modo antigo: para comparar com o modo novo no próprio tablet.
+
+NOVO NA 11.4 — BORRACHA PRECISA E ESPESSURA CERTA
+ • Borracha: apaga só o que a tinta visível toca. Antes, retas, setas, retângulos e elipses
+   eram apagados por qualquer toque dentro da "caixa" em volta deles (uma reta diagonal sumia
+   com a borracha longe dela). Agora o corte é exato na borda do círculo da borracha, encostar
+   na beirada de um traço grosso já apaga, e retas longas não "escapam" mais.
+ • Borracha por Objeto: apaga o traço ou figura tocado, não o grupo inteiro (palavra).
+ • Barra de espessura: a bolinha acompanha a caneta/dedo (antes ficava presa no começo da
+   barra enquanto arrastava). Ajuste fino nos botões − e +.
+ • Cada ferramenta guarda a sua espessura: caneta, marca-texto e borracha.
+ • Marca-texto: o número mostrado é a espessura real do traço.
+ • Borracha: o tamanho é ajustado na mesma barra (aparece "Borracha: − ▬ +").

@@ -245,7 +245,7 @@
     for (const n of nat) {
       if (n.pointerType === 'pen' && !(n.pressure > 0) && !P.byDown && !(P.active && P.active.sz && btnErasing(n, false))) continue;
       const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
-      const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
+      const steps = Math.max(1, Math.min(48, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.6))));
       for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
       ER.last = q;
     }
@@ -346,7 +346,7 @@
     const nat = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
     for (const n of nat) {
       const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
-      const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
+      const steps = Math.max(1, Math.min(48, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.6))));
       for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
       ER.last = q;
     }
@@ -536,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.3</title>
+<title>MindMap Studio — Tablet 11.4</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2790,6 +2790,8 @@ body.tab #svg.mode-draw #drawings, body.tab #svg.mode-draw #drawingsBg,
 body.tab #svg.mode-eraser #drawings, body.tab #svg.mode-eraser #drawingsBg { pointer-events: none; }
 #tabInkShield { display: none; }
 body.tab #svg.mode-draw #tabInkShield, body.tab #svg.mode-eraser #tabInkShield { display: inline; }
+/* v11.4: o tamanho da borracha é ajustado na barra principal (Borracha: − ▬ +) */
+body.tab #penEraserSizeSlider, body.tab #penEraserSizeLabel { display: none !important; }
 #tabMore button, #tabMore label { color: #0f172a; }
 body.theme-dark #tabMore button { background: #334155; color: #e2e8f0; border-color: #475569; }
 body.theme-dark #tabMore label { color: #e2e8f0; }
@@ -10000,7 +10002,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.3",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.4",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -10044,7 +10046,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.3 · 04/11/2026 12:00';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.4 · 04/11/2026 15:30';
  }
  document.body.classList.add('theme-dots');
 
@@ -12858,136 +12860,198 @@ function __itemsBBox(items, fallback) {
 function __eraserProtected(d, sub) {
   return sub.kind === 'image' || !!d.sdxFrame || (!!d.sdxPage && sub.kind === 'shape');
 }
+/* v11.4 — BORRACHA PRECISA: apaga só o que a tinta VISÍVEL toca.
+   Antes: figuras (reta, seta, retângulo, elipse…) eram testadas pela CAIXA em volta delas → uma reta diagonal sumia com a
+   borracha longe dela; os traços eram testados só pelo centro da linha (traço grosso não apagava encostando na tinta) e por
+   pontos espaçados (reta longa de 2 pontos às vezes nem apagava e, quando apagava, abria um buraco bem maior que a borracha).
+   Agora: distância exata do círculo da borracha até o traço/contorno (+ meia espessura da tinta), corte exato na borda do
+   círculo, rotação e escala do desenho levadas em conta. Modo Objeto: apaga o traço/figura tocado (não o grupo inteiro). */
+function __drawingXf(d) {
+  const ox = d.x || 0, oy = d.y || 0, sx = d.scaleX || 1, sy = d.scaleY || 1;
+  const rot = (d.rotation || 0) * Math.PI / 180;
+  const b = d.bbox || { x: -20, y: -20, w: 40, h: 40 };
+  const ccx = (b.x + b.w / 2) * sx, ccy = (b.y + b.h / 2) * sy, c = Math.cos(rot), s = Math.sin(rot);
+  // mesmo transform do desenho: translate(o) translate(C·s) rotate(rot) translate(−C·s) scale(s)
+  const xf = rot
+    ? (x, y) => { const dx = x * sx - ccx, dy = y * sy - ccy; return { x: ox + ccx + c * dx - s * dy, y: oy + ccy + s * dx + c * dy }; }
+    : (x, y) => ({ x: ox + x * sx, y: oy + y * sy });
+  xf.k = Math.sqrt(Math.abs(sx * sy)) || 1;
+  return xf;
+}
+function __drawingNear(d, wx, wy, R) {
+  const b = getDrawingWorldBounds(d); if (!b) return false;
+  if (d.rotation) return Math.hypot(wx - b.cx, wy - b.cy) <= Math.hypot(b.w, b.h) / 2 + R;
+  return !(wx < b.x - R || wx > b.x + b.w + R || wy < b.y - R || wy > b.y + b.h + R);
+}
+function __segDist2(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+  let t = L > 1e-12 ? ((px - ax) * dx + (py - ay) * dy) / L : 0; t = t < 0 ? 0 : t > 1 ? 1 : t;
+  const qx = ax + dx * t - px, qy = ay + dy * t - py; return qx * qx + qy * qy;
+}
+function __polyNear(W, closed, px, py, R) {
+  const R2 = R * R;
+  if (W.length === 1) { const a = W[0]; return (a.x - px) * (a.x - px) + (a.y - py) * (a.y - py) <= R2; }
+  for (let i = 1; i < W.length; i++) if (__segDist2(px, py, W[i - 1].x, W[i - 1].y, W[i].x, W[i].y) <= R2) return true;
+  return !!closed && W.length > 2 && __segDist2(px, py, W[W.length - 1].x, W[W.length - 1].y, W[0].x, W[0].y) <= R2;
+}
+function __pointInPoly(W, px, py) {
+  let ins = false;
+  for (let i = 0, j = W.length - 1; i < W.length; j = i++) {
+    const a = W[i], b = W[j];
+    if ((a.y > py) !== (b.y > py) && px < (b.x - a.x) * (py - a.y) / (b.y - a.y) + a.x) ins = !ins;
+  }
+  return ins;
+}
+/* contorno (coordenadas do desenho) de uma figura, igual ao que createSvgElementForStrokeOrShape desenha */
+function __shapeOutline(s) {
+  const x1 = s.x1 || 0, y1 = s.y1 || 0, x2 = s.x2 || 0, y2 = s.y2 || 0;
+  const bx = Math.min(x1, x2), by = Math.min(y1, y2), bw = Math.max(4, Math.abs(x2 - x1)), bh = Math.max(4, Math.abs(y2 - y1));
+  const cx = bx + bw / 2, cy = by + bh / 2, P = [];
+  const ring = (n, rx, ry, a0) => { for (let i = 0; i < n; i++) { const a = a0 + i * 2 * Math.PI / n; P.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry }); } };
+  switch (s.shape) {
+    case 'line': return [{ pts: [{ x: x1, y: y1 }, { x: x2, y: y2 }], closed: false }];
+    case 'arrow': {
+      const ang = Math.atan2(y2 - y1, x2 - x1), h = Math.max(12, Math.max(1, Number(s.strokeWidth) || 5) * 3.2);
+      const head = [{ x: x2, y: y2 }, { x: x2 - h * Math.cos(ang - Math.PI / 6), y: y2 - h * Math.sin(ang - Math.PI / 6) }, { x: x2 - h * Math.cos(ang + Math.PI / 6), y: y2 - h * Math.sin(ang + Math.PI / 6) }];
+      return [{ pts: [{ x: x1, y: y1 }, { x: x2, y: y2 }], closed: false }, { pts: head, closed: true, filled: true }];
+    }
+    case 'ellipse': case 'circle': {
+      const rW = s.shape === 'circle' ? Math.min(bw, bh) / 2 : bw / 2, rH = s.shape === 'circle' ? rW : bh / 2;
+      ring(64, rW, rH, 0); break;
+    }
+    case 'triangle': P.push({ x: cx, y: by }, { x: bx + bw, y: by + bh }, { x: bx, y: by + bh }); break;
+    case 'diamond': P.push({ x: cx, y: by }, { x: bx + bw, y: cy }, { x: cx, y: by + bh }, { x: bx, y: cy }); break;
+    case 'polygon': ring(Math.max(3, Math.min(12, s.sides || 6)), bw / 2, bh / 2, -Math.PI / 2); break;
+    case 'star': { const o = Math.min(bw, bh) / 2; for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? o * 0.42 : o; P.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r }); } break; }
+    default: P.push({ x: bx, y: by }, { x: bx + bw, y: by }, { x: bx + bw, y: by + bh }, { x: bx, y: by + bh });   // rect, roundrect…
+  }
+  return [{ pts: P, closed: true }];
+}
+/* corta o traço exatamente na borda do círculo (centro w, raio R, em coordenadas do mapa). null = não tocou */
+function __cutStroke(pts0, closed, xf, wx, wy, R) {
+  const pts = closed && pts0.length > 2 ? pts0.concat([pts0[0]]) : pts0;
+  const W = pts.map(q => xf(q.x, q.y)), R2 = R * R;
+  const inside = q => (q.x - wx) * (q.x - wx) + (q.y - wy) * (q.y - wy) <= R2;
+  const lerp = (a, b, t) => {
+    const o = { ...a, x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (a.p != null && b.p != null) o.p = a.p + (b.p - a.p) * t;
+    if (a.tx != null && b.tx != null) o.tx = a.tx + (b.tx - a.tx) * t;
+    if (a.ty != null && b.ty != null) o.ty = a.ty + (b.ty - a.ty) * t;
+    return o;
+  };
+  let hit = inside(W[0]);
+  const out = []; let cur = hit ? [] : [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    const A = W[i - 1], B = W[i], dx = B.x - A.x, dy = B.y - A.y, fx = A.x - wx, fy = A.y - wy;
+    const a = dx * dx + dy * dy, bq = 2 * (fx * dx + fy * dy), c = fx * fx + fy * fy - R2;
+    let t0 = 2, t1 = -1;
+    if (a > 1e-12) { const disc = bq * bq - 4 * a * c; if (disc > 0) { const sq = Math.sqrt(disc); t0 = (-bq - sq) / (2 * a); t1 = (-bq + sq) / (2 * a); } }
+    else if (c <= 0) { t0 = 0; t1 = 1; }
+    if (t1 < 0 || t0 > 1) { cur.push(pts[i]); continue; }       // este pedaço não encosta na borracha
+    hit = true;
+    if (t0 > 0) cur.push(lerp(pts[i - 1], pts[i], t0));           // entra no círculo: termina o pedaço aqui
+    if (cur.length >= 2) out.push(cur);
+    cur = t1 < 1 ? [lerp(pts[i - 1], pts[i], t1), pts[i]] : [];   // sai do círculo: começa outro pedaço
+  }
+  if (cur.length >= 2) out.push(cur);
+  if (!hit) return null;
+  // traço fechado cortado uma vez: o último pedaço continua no primeiro
+  if (closed && out.length >= 2 && out[0][0] === pts[0] && out[out.length - 1][out[out.length - 1].length - 1] === pts[pts.length - 1]) {
+    const last = out.pop(); out[0] = last.concat(out[0].slice(1));
+  }
+  return out.filter(seg => { let L = 0; for (let i = 1; i < seg.length; i++) L += Math.hypot(seg[i].x - seg[i - 1].x, seg[i].y - seg[i - 1].y); return L * xf.k > 0.6; });
+}
+/* caixa local de cada item (guardada; os pontos de um item não mudam — a borracha cria itens novos) */
+const __itemBBCache = new WeakMap();
+function __itemLocalBB(sub) {
+  let bb = __itemBBCache.get(sub);
+  if (bb && bb.n === (sub.pts ? sub.pts.length : -1)) return bb;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  if (Array.isArray(sub.pts) && sub.pts.length) { for (const q of sub.pts) { if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; if (q.y > y1) y1 = q.y; } }
+  else if (sub.x1 != null) { x0 = Math.min(sub.x1, sub.x2); x1 = Math.max(sub.x1, sub.x2); y0 = Math.min(sub.y1, sub.y2); y1 = Math.max(sub.y1, sub.y2); }
+  else return null;
+  bb = { x0, y0, x1, y1, n: sub.pts ? sub.pts.length : -1 }; __itemBBCache.set(sub, bb); return bb;
+}
+/* resultado: null = não tocou · [] = apagar o item · [[pts]…] = pedaços que ficam · 'all' = apagar o desenho inteiro */
+function __eraseItem(d, sub, xf, wx, wy, R0, objMode) {
+  const half = Math.max(0.5, (Number(sub.strokeWidth) || 4) / 2) * xf.k;
+  if (!d.rotation) {                                   // filtro rápido: a caixa do item nem chega perto
+    const bb = __itemLocalBB(sub);
+    if (bb) {
+      const sx = d.scaleX || 1, sy = d.scaleY || 1, ox = d.x || 0, oy = d.y || 0;
+      const ax = ox + Math.min(bb.x0 * sx, bb.x1 * sx), bx = ox + Math.max(bb.x0 * sx, bb.x1 * sx);
+      const ay = oy + Math.min(bb.y0 * sy, bb.y1 * sy), by = oy + Math.max(bb.y0 * sy, bb.y1 * sy);
+      const m = R0 + half + (sub.shape === 'arrow' ? Math.max(12, (Number(sub.strokeWidth) || 5) * 3.2) * xf.k : 0) + 1;
+      if (wx < ax - m || wx > bx + m || wy < ay - m || wy > by + m) return null;
+    }
+  }
+  if ((sub.kind === 'stroke' || sub.shape === 'freeform') && Array.isArray(sub.pts) && sub.pts.length) {
+    const R = R0 + half;
+    if (objMode || sub.pts.length < 2) {
+      const W = sub.pts.map(q => xf(q.x, q.y));
+      const filled = sub.fillStyle && sub.fillStyle !== 'none' && sub.fill !== 'none' && W.length > 2;
+      return (__polyNear(W, !!sub.closed, wx, wy, R) || (filled && __pointInPoly(W, wx, wy))) ? [] : null;
+    }
+    return __cutStroke(sub.pts, !!sub.closed, xf, wx, wy, R);
+  }
+  const prot = __eraserProtected(d, sub);
+  if (prot && !objMode) return null;
+  if (sub.x1 == null) return null;
+  if (sub.kind === 'image') {
+    const W = [[sub.x1, sub.y1], [sub.x2, sub.y1], [sub.x2, sub.y2], [sub.x1, sub.y2]].map(q => xf(q[0], q[1]));
+    return (__pointInPoly(W, wx, wy) || __polyNear(W, true, wx, wy, R0)) ? (d.sdxFrame ? 'all' : []) : null;
+  }
+  const R = R0 + half, filledShape = !prot && sub.fillStyle && sub.fillStyle !== 'none' && sub.fill && sub.fill !== 'none';
+  for (const part of __shapeOutline(sub)) {
+    const W = part.pts.map(q => xf(q.x, q.y));
+    if (__polyNear(W, part.closed, wx, wy, R) || ((part.filled || (filledShape && part.closed)) && __pointInPoly(W, wx, wy))) return d.sdxFrame ? 'all' : [];
+  }
+  return null;
+}
 function eraseAtWorldPoint(wx, wy, radiusWorld) {
-  const mode = window.penEraserMode || 'segment';
+  const objMode = (window.penEraserMode || 'segment') === 'object';
   let changed = false;
   window.__eraseDelta = [];
-
-  if (mode === 'object') {
-    const hit = findDrawingAtWorldPoint(wx, wy);
-    if (hit && !hit.locked && !hit.hidden) {
-      window.__eraseDelta.push({ old: hit, repl: [] });
-      window.drawingsList = (window.drawingsList || []).filter(x => x.id !== hit.id);
-      window.drawLinksList = (window.drawLinksList || []).filter(l => l.drawingId !== hit.id);
-      window.selectedDrawings.delete(hit.id);
-      return true;
-    }
-    return false;
-  }
-
-  // Modo Segmento (Parcial): verifica cada traço e remove pontos dentro do círculo de raio radiusWorld,
-  // dividindo o traço em sub-traços independentes quando apagado no meio!
-  const nextDrawings = [];
+  const nextDrawings = [], gone = [];
   for (const d of (window.drawingsList || [])) {
-    if (d.locked || d.hidden) { nextDrawings.push(d); continue; }
-    const b = getDrawingWorldBounds(d);
-    if (!b || wx < b.x - radiusWorld || wx > b.x + b.w + radiusWorld || wy < b.y - radiusWorld || wy > b.y + b.h + radiusWorld) {
-      nextDrawings.push(d);
-      continue;
-    }
-    const ox = d.x || 0, oy = d.y || 0;
-    const sx = d.scaleX || 1, sy = d.scaleY || 1;
+    if (d.locked || d.hidden || !__drawingNear(d, wx, wy, radiusWorld + 32)) { nextDrawings.push(d); continue; }
+    const xf = __drawingXf(d);
     const items = d.items || [d];
-    const remainingItems = [];
-    let splitIntoSeparateDrawings = [];
-
+    const keep = [];
+    let touched = false, killAll = false;
     for (const sub of items) {
-      if (sub.kind === 'stroke' && Array.isArray(sub.pts) && sub.pts.length >= 2) {
-        // Densifica segmentos longos antes de testar colisão com o raio da borracha
-        const densePts = [];
-        for (let i = 0; i < sub.pts.length; i++) {
-          const pCur = sub.pts[i];
-          densePts.push(pCur);
-          if (i < sub.pts.length - 1) {
-            const pNext = sub.pts[i + 1];
-            const dist = Math.hypot((pNext.x - pCur.x) * sx, (pNext.y - pCur.y) * sy);
-            const steps = Math.min(20, Math.floor(dist / Math.max(2, radiusWorld * 0.45)));
-            for (let s = 1; s < steps; s++) {
-              const t = s / steps;
-              densePts.push({
-                x: pCur.x + (pNext.x - pCur.x) * t,
-                y: pCur.y + (pNext.y - pCur.y) * t,
-                p: (pCur.p !== undefined && pNext.p !== undefined) ? (pCur.p + (pNext.p - pCur.p) * t) : 1.0
-              });
-            }
-          }
-        }
-
-        let currentSegment = [];
-        const segments = [];
-        let hitThisStroke = false;
-        for (const pt of densePts) {
-          const pxWorld = ox + pt.x * sx;
-          const pyWorld = oy + pt.y * sy;
-          if (Math.hypot(pxWorld - wx, pyWorld - wy) <= (sub.penType === 'highlighter' ? radiusWorld + (Number(sub.strokeWidth) || 0) / 2 : radiusWorld)) {
-            hitThisStroke = true;
-            if (currentSegment.length >= 2) segments.push(currentSegment);
-            currentSegment = [];
-          } else {
-            currentSegment.push(pt);
-          }
-        }
-        if (currentSegment.length >= 2) segments.push(currentSegment);
-
-        if (!hitThisStroke) {
-          remainingItems.push(sub);
-        } else {
-          changed = true;
-          segments.forEach(segPts => {
-            const newStroke = {
-              ...sub,
-              pts: segPts,
-              closed: false,
-              fillStyle: 'none',
-              dCenter: buildSmoothCenterlinePath(segPts, false)
-            };
-            delete newStroke.dOutline;
-            splitIntoSeparateDrawings.push(newStroke);
-          });
-        }
-      } else if (__eraserProtected(d, sub)) {
-        remainingItems.push(sub);
-      } else {
-        // Forma geométrica: se o cursor da borracha tocar na caixa da forma, remove a forma
-        const x1 = ox + Math.min(sub.x1 || 0, sub.x2 || 0) * sx;
-        const y1 = oy + Math.min(sub.y1 || 0, sub.y2 || 0) * sy;
-        const x2 = ox + Math.max(sub.x1 || 0, sub.x2 || 0) * sx;
-        const y2 = oy + Math.max(sub.y1 || 0, sub.y2 || 0) * sy;
-        if (wx >= x1 - radiusWorld && wx <= x2 + radiusWorld && wy >= y1 - radiusWorld && wy <= y2 + radiusWorld) {
-          changed = true;
-        } else {
-          remainingItems.push(sub);
-        }
+      const res = __eraseItem(d, sub, xf, wx, wy, radiusWorld, objMode);
+      if (res === null) { keep.push(sub); continue; }
+      touched = true;
+      if (res === 'all') { killAll = true; break; }
+      for (const segPts of res) {
+        const ns = { ...sub, pts: segPts, closed: false, fillStyle: 'none', dCenter: buildSmoothCenterlinePath(segPts, false) };
+        delete ns.dOutline;
+        keep.push(ns);
       }
     }
-
-    // Nada apagado neste desenho → fica como está
-    const pieces = remainingItems.concat(splitIntoSeparateDrawings);
-    if (!splitIntoSeparateDrawings.length && remainingItems.length === items.length) {
-      nextDrawings.push(d);
-      continue;
-    }
-    // Tudo apagado → some
-    if (!pieces.length) {
-      window.__eraseDelta.push({ old: d, repl: [] });
-      continue;
-    }
-    // Os pedaços continuam NO MESMO desenho (a palavra não se desmancha em dezenas de desenhos soltos)
+    if (!touched) { nextDrawings.push(d); continue; }
+    changed = true;
+    if (killAll || !keep.length) { window.__eraseDelta.push({ old: d, repl: [] }); gone.push(d.id); continue; }
     if (Array.isArray(d.items)) {
-      d.items = pieces;
-      d.bbox = __itemsBBox(pieces, d.bbox);
+      d.items = keep;
+      if (!d.rotation) d.bbox = __itemsBBox(keep, d.bbox);    // girado: mantém a caixa (é o centro da rotação — senão o desenho "pularia")
       nextDrawings.push(d);
       window.__eraseDelta.push({ old: d, repl: [d] });
     } else {
-      const nd = { id: uid(), x: ox, y: oy, scaleX: sx, scaleY: sy, rotation: d.rotation || 0, layer: d.layer || 'fg',
-                   bbox: __itemsBBox(pieces, d.bbox), items: pieces };
+      const nd = { id: uid(), x: d.x || 0, y: d.y || 0, scaleX: d.scaleX || 1, scaleY: d.scaleY || 1, rotation: d.rotation || 0, layer: d.layer || 'fg',
+                   bbox: d.rotation ? d.bbox : __itemsBBox(keep, d.bbox), items: keep };
       nextDrawings.push(nd);
       window.__eraseDelta.push({ old: d, repl: [nd] });
     }
   }
-
   if (changed) {
     window.drawingsList = nextDrawings;
+    if (gone.length) {
+      const G = new Set(gone);
+      if ((window.drawLinksList || []).length) window.drawLinksList = window.drawLinksList.filter(l => !G.has(l.drawingId));
+      gone.forEach(id => window.selectedDrawings && window.selectedDrawings.delete(id));
+    }
   }
   return changed;
 }
@@ -13670,7 +13734,7 @@ window.runSimulatedPenTabletStroke = function() {
         for (const ce of evs) {
           const pt = worldPoint(ce.clientX, ce.clientY);
           const dist = Math.hypot(pt.x - lastEr.x, pt.y - lastEr.y);
-          const steps = Math.max(1, Math.min(12, Math.ceil(dist / (radiusWorld * 0.8))));
+          const steps = Math.max(1, Math.min(48, Math.ceil(dist / (radiusWorld * 0.6))));
           for (let s = 1; s <= steps; s++) {
             const q = { x: lastEr.x + (pt.x - lastEr.x) * s / steps, y: lastEr.y + (pt.y - lastEr.y) * s / steps };
             if (eraseAtWorldPoint(q.x, q.y, radiusWorld)) { any = true; applyEraseDelta(); }
@@ -14207,6 +14271,7 @@ window.runSimulatedPenTabletStroke = function() {
     });
     $('penShapesBtn')?.classList.toggle('active', SHAPE_TOOLS.includes(tool) || tool === 'freeform');
     updateLiveStrokePreview();
+    if (window.__syncWidthUI) window.__syncWidthUI();
   };
 
   const closeFly = () => document.querySelectorAll('.pd-fly.open').forEach(x => x.classList.remove('open'));
@@ -14217,10 +14282,8 @@ window.runSimulatedPenTabletStroke = function() {
       d.firstChild.style.width = d.firstChild.style.height = v + 'px';
       d.firstChild.style.background = window.penStrokeColor;
     }
-    const dctSl = $('dctSizeSlider');
-    const dctLbl = $('dctSizeLabel');
-    if (dctSl) dctSl.value = String(window.penStrokeWidth || 5);
-    if (dctLbl) dctLbl.textContent = (window.penStrokeWidth || 5) + 'px';
+    // v11.4: a barra vai de 0 a 1000 (curva) — quem posiciona é o controle de espessura
+    if (window.__syncWidthUI) window.__syncWidthUI();
     updateLiveStrokePreview();
   };
 
@@ -16576,21 +16639,41 @@ async function sdxRunImport() {
    • botões − e + (segure para repetir), roda do mouse e setas do teclado sobre o controle
    ===================================================================== */
 (function widthSlider() {
-  const MIN = 1, MAX = 64, RES = 1000;
+  /* v11.4 — slider de espessura refeito:
+     • a bolinha segue a caneta/dedo exatamente (antes, ao mudar o valor, outra rotina gravava a espessura em px numa barra
+       de 0–1000 → a bolinha grudava no começo da barra durante o arraste e ao trocar a cor; e o "ajuste fino por velocidade"
+       fazia a bolinha andar só 20% do movimento quando o arraste era lento)
+     • cada ferramenta tem a SUA espessura: caneta/lápis/formas, marca-texto e borracha (como no Samsung Notes)
+     • marca-texto: o número mostrado é a espessura real (antes 1 a 3,5 davam todos o mesmo traço de 10 px e "5px" eram 14 px)
+     • borracha: a mesma barra controla o tamanho da borracha (antes a barra "Espessura" mexia na caneta, não na borracha)
+     • ajuste fino: botões − e + (segure para repetir) */
+  const RES = 1000;
+  const RANGE = { pen: [1, 64], hl: [4, 64], eraser: [4, 100] };
+  const grp = () => window.penSubTool === 'eraser' ? 'eraser' : window.penSubTool === 'highlighter' ? 'hl' : 'pen';
   const fmt = v => (Math.round(v * 10) / 10).toString().replace('.', ',') + 'px';
-  const snap = v => { v = Math.max(MIN, Math.min(MAX, Number(v) || 4)); return v < 10 ? Math.round(v * 2) / 2 : Math.round(v); };
-  const stepOf = (v, dir) => (dir > 0 ? (v < 10 ? 0.5 : v < 20 ? 1 : 2) : (v <= 10 ? 0.5 : v <= 20 ? 1 : 2));
-  // posição (0..1) ⇄ espessura, curva quadrática: metade da barra cobre 1–17 px
-  const toW = t => MIN + (MAX - MIN) * t * t;
-  const toT = w => Math.sqrt(Math.max(0, (w - MIN) / (MAX - MIN)));
+  const snap = (v, g) => { const [a, b] = RANGE[g]; v = Math.max(a, Math.min(b, Number(v) || a)); return g !== 'eraser' && v < 10 ? Math.round(v * 2) / 2 : Math.round(v); };
+  const stepOf = (v, dir, g) => g === 'eraser' ? (v < 20 || (dir < 0 && v <= 20) ? 1 : 2) : (dir > 0 ? (v < 10 ? 0.5 : v < 20 ? 1 : 2) : (v <= 10 ? 0.5 : v <= 20 ? 1 : 2));
+  // posição (0..1) ⇄ espessura, curva quadrática: a parte fina ocupa mais espaço na barra
+  const toW = (t, g) => { const [a, b] = RANGE[g]; return a + (b - a) * t * t; };
+  const toT = (w, g) => { const [a, b] = RANGE[g]; return Math.sqrt(Math.max(0, Math.min(1, (w - a) / (b - a)))); };
 
-  // aceita meio-passo e a mesma faixa nas duas barras
+  // espessura guardada por ferramenta (preferência deste aparelho)
+  const KEY = 'mm_tab_widths_v114';
+  const W = { pen: 5, hl: 14, eraser: 24 };
+  try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s) ['pen', 'hl', 'eraser'].forEach(k => { if (Number(s[k]) > 0) W[k] = snap(s[k], k); }); } catch (_) {}
+  const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(W)); } catch (_) {} };
+  const cur = g => g === 'eraser' ? (window.penEraserSize || W.eraser) : (window.penStrokeWidth || W[g]);
+
+  // marca-texto: o valor da barra já é a espessura final do traço
+  window.hlThickness = w => Math.max(1, Number(w) || 14);
+
   const orig = window.setPenStrokeWidth;
   if (typeof orig !== 'function') return;
   window.setPenStrokeWidth = function (val, skipSelection) {
-    const v = snap(val);
+    const g = grp() === 'hl' ? 'hl' : 'pen';
+    const v = snap(val, g);
     const r = orig.call(this, Math.round(v), true);              // o original só aceita inteiros: corrige logo abaixo
-    window.penStrokeWidth = v;
+    window.penStrokeWidth = v; W[g] = v; persist();
     if (!skipSelection && window.selectedDrawings && window.selectedDrawings.size > 0) {
       try { updateSelectedDrawingStyle({ strokeWidth: v, fromPenSlider: true }); } catch (_) {}
     }
@@ -16598,49 +16681,65 @@ async function sdxRunImport() {
     try { if (typeof updateLiveStrokePreview === 'function') updateLiveStrokePreview(); } catch (_) {}
     return r;
   };
+  window.setPenEraserSize = function (val) {
+    const v = snap(val, 'eraser');
+    window.penEraserSize = v; W.eraser = v; persist();
+    syncUI();
+  };
+  // trocou de ferramenta: volta a espessura que essa ferramenta tinha
+  const origTool = window.setPenSubTool;
+  if (typeof origTool === 'function') window.setPenSubTool = function () {
+    const r = origTool.apply(this, arguments);
+    const g = grp();
+    if (g !== 'eraser' && window.penStrokeWidth !== W[g]) { orig.call(window, Math.round(W[g]), true); window.penStrokeWidth = W[g]; }
+    syncUI();
+    return r;
+  };
+  const setW = v => grp() === 'eraser' ? window.setPenEraserSize(v) : window.setPenStrokeWidth(v);
+
   const sliders = () => ['penSizeSlider', 'dctSizeSlider'].map(id => document.getElementById(id)).filter(Boolean);
   function syncUI() {
-    const v = window.penStrokeWidth || 5;
-    sliders().forEach(s => { if (!s.__drag) s.value = String(Math.round(toT(v) * RES)); s.setAttribute('aria-valuetext', fmt(v)); });
+    const g = grp(), v = cur(g);
+    sliders().forEach(s => { s.value = String(Math.round((s.__drag ? s.__drag.t : toT(v, g)) * RES)); s.setAttribute('aria-valuetext', fmt(v)); });
     ['penSizeVal', 'dctSizeLabel'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = fmt(v); });
+    const lab = document.querySelector('#dctSizeSlider') && document.querySelector('#dctSizeSlider').parentNode.querySelector('.dct-label');
+    if (lab) lab.textContent = g === 'eraser' ? 'Borracha:' : g === 'hl' ? 'Marca-texto:' : 'Espessura:';
+    const os = document.getElementById('penEraserSizeSlider'), ol = document.getElementById('penEraserSizeLabel');
+    if (os) { os.min = '4'; os.max = '100'; os.value = String(window.penEraserSize || W.eraser); }
+    if (ol) ol.textContent = (window.penEraserSize || W.eraser) + 'px';
     const d = document.getElementById('penSizeDot');
-    if (d && d.firstChild) { const z = Math.min(28, v + 2); d.firstChild.style.width = d.firstChild.style.height = z + 'px'; }
+    if (d && d.firstChild) { const z = Math.min(28, (g === 'eraser' ? v / 3 : v) + 2); d.firstChild.style.width = d.firstChild.style.height = z + 'px'; }
   }
-  const setW = v => window.setPenStrokeWidth(snap(v));
+  window.__syncWidthUI = syncUI;
 
   sliders().forEach(s => {
     s.removeAttribute('oninput'); s.oninput = null;
     s.min = '0'; s.max = String(RES); s.step = '1';
     // valor pelo próprio controle (teclado/acessibilidade) — o arraste é tratado abaixo
-    s.addEventListener('input', () => { if (!s.__drag) setW(toW(Number(s.value) / RES)); });
-    // arraste com ajuste fino: a velocidade do movimento decide o quanto a espessura anda
+    s.addEventListener('input', () => { if (!s.__drag) setW(toW(Number(s.value) / RES, grp())); else s.value = String(Math.round(s.__drag.t * RES)); });
+    const geo = () => { const r = s.getBoundingClientRect(), pad = 8; return { left: r.left + pad, w: Math.max(20, r.width - 2 * pad) }; };
+    // arraste: a bolinha acompanha a ponta exatamente (sem "pular" ao encostar nela)
     s.addEventListener('pointerdown', e => {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       e.preventDefault(); e.stopPropagation();
-      const r = s.getBoundingClientRect(), pad = 8, w = Math.max(20, r.width - 2 * pad);
-      const tNow = toT(window.penStrokeWidth || 5);
-      const thumbX = r.left + pad + tNow * w;
-      let t = tNow;
-      if (Math.abs(e.clientX - thumbX) > 12) { t = Math.max(0, Math.min(1, (e.clientX - r.left - pad) / w)); setW(toW(t)); t = toT(window.penStrokeWidth); }
-      s.__drag = { id: e.pointerId, x: e.clientX, tm: performance.now(), t, w, v: 0 };
+      const G = geo(), g = grp();
+      let t = toT(cur(g), g);
+      if (Math.abs(e.clientX - (G.left + t * G.w)) > 14) {             // tocou longe da bolinha: vai direto para lá
+        t = Math.max(0, Math.min(1, (e.clientX - G.left) / G.w));
+        s.__drag = { id: e.pointerId, x0: e.clientX, t0: t, t, g };
+        setW(toW(t, g));
+      } else s.__drag = { id: e.pointerId, x0: e.clientX, t0: t, t, g };
       s.__startDrag();
-      s.value = String(Math.round(t * RES));
+      syncUI();
       s.focus({ preventScroll: true });
     });
-    // o arraste é acompanhado pela janela inteira (não depende de o controle manter a "captura" do ponteiro,
-    // que o navegador às vezes solta logo no primeiro movimento — o arraste lento parecia não funcionar)
+    // o arraste é acompanhado pela janela inteira (não depende de o controle manter a "captura" do ponteiro)
     const onMove = e => {
       const D = s.__drag; if (!D || e.pointerId !== D.id) return;
       e.preventDefault();
-      const now = performance.now(), dx = e.clientX - D.x, dt = Math.max(1, now - D.tm);
-      D.x = e.clientX; D.tm = now;
-      D.v = D.v * 0.6 + (Math.abs(dx) / dt) * 0.4;                          // velocidade suavizada (px/ms)
-      // devagar (< 0,08 px/ms) anda 20% do movimento; rápido (> 0,7 px/ms) acompanha o dedo/caneta
-      const k = Math.max(0, Math.min(1, (D.v - 0.08) / 0.62)), gain = 0.2 + 0.8 * k;
-      D.t = Math.max(0, Math.min(1, D.t + (dx / D.w) * gain));
-      s.value = String(Math.round(D.t * RES));
-      const nv = snap(toW(D.t));
-      if (nv !== window.penStrokeWidth) setW(nv);
+      D.t = Math.max(0, Math.min(1, D.t0 + (e.clientX - D.x0) / geo().w));
+      const nv = snap(toW(D.t, D.g), D.g);
+      if (nv !== cur(D.g)) setW(nv); else syncUI();
     };
     const onEnd = e => {
       const D = s.__drag; if (!D || (e && e.pointerId !== D.id)) return;
@@ -16655,33 +16754,32 @@ async function sdxRunImport() {
       window.addEventListener('pointerup', onEnd, true);
       window.addEventListener('pointercancel', onEnd, true);
     };
+    const stepOnce = dir => { const g = grp(), v = cur(g); setW(v + dir * stepOf(v, dir, g)); };
     // setas: um passo por toque · roda do mouse: um passo por "clique" da roda
     s.addEventListener('keydown', e => {
       const dir = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 1 : (e.key === 'ArrowLeft' || e.key === 'ArrowDown') ? -1 : 0;
       if (!dir) return;
-      e.preventDefault(); e.stopPropagation();
-      const v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir));
+      e.preventDefault(); e.stopPropagation(); stepOnce(dir);
     });
-    s.addEventListener('wheel', e => {
-      e.preventDefault();
-      const dir = e.deltaY < 0 ? 1 : -1, v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir));
-    }, { passive: false });
+    s.addEventListener('wheel', e => { e.preventDefault(); stepOnce(e.deltaY < 0 ? 1 : -1); }, { passive: false });
     // botões − e + (segurar repete)
     const mk = (dir, txt, title) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'ws-btn'; b.textContent = txt; b.title = title; b.setAttribute('aria-label', title);
       let t1 = 0, t2 = 0;
-      const stepOnce = () => { const v = window.penStrokeWidth || 5; setW(v + dir * stepOf(v, dir)); };
       const stop = () => { clearTimeout(t1); clearInterval(t2); };
-      b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); stepOnce(); stop(); t1 = setTimeout(() => { t2 = setInterval(stepOnce, 90); }, 420); });
+      b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); stepOnce(dir); stop(); t1 = setTimeout(() => { t2 = setInterval(() => stepOnce(dir), 90); }, 420); });
       ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, stop));
       b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
-      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stepOnce(); } });
+      b.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); stepOnce(dir); } });
       return b;
     };
-    s.parentNode.insertBefore(mk(-1, '−', 'Diminuir espessura'), s);
-    s.parentNode.insertBefore(mk(+1, '+', 'Aumentar espessura'), s.nextSibling);
+    s.parentNode.insertBefore(mk(-1, '−', 'Diminuir'), s);
+    s.parentNode.insertBefore(mk(+1, '+', 'Aumentar'), s.nextSibling);
   });
+  // estado inicial: espessuras guardadas
+  window.penEraserSize = W.eraser;
+  { const g = grp() === 'hl' ? 'hl' : 'pen'; orig.call(window, Math.round(W[g]), true); window.penStrokeWidth = W[g]; }
   syncUI();
 })();
 
@@ -16695,7 +16793,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.3 · 04/11/2026 12:00';
+  window.APP_BUILD = 'Tablet 11.4 · 04/11/2026 15:30';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16762,7 +16860,7 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
     <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.3 · 04/11/2026 12:00</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 11.4 · 04/11/2026 15:30</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16905,7 +17003,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.3 · 04/11/2026 12:00</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 11.4 · 04/11/2026 15:30</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
