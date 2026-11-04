@@ -10,6 +10,61 @@
 <script>window.__MM_PWA__=true;</script>
 <script>
 /* =====================================================================
+   11.1 — QUALQUER CAIXA ABERTA FECHA COM UM TOQUE FORA DELA (dedo, mouse ou caneta)
+   Roda antes de todo o resto (o tablet e a caneta "consomem" os toques no mapa; por isso
+   antes era preciso tocar de novo no mesmo botão para fechar).
+   ===================================================================== */
+(function closeOnOutsideTap() {
+  const SAFE_DIALOGS = ['shortcutsDlg', 'exportStatsDlg', 'appModalDlg', 'nodeImpDlg', 'sdocxDlg'];   // janelas só de leitura/escolha
+  window.__outsideClose = window.__outsideClose || [];
+  const isOpen = el => !!el && el.style.display !== 'none' && getComputedStyle(el).display !== 'none';
+  window.addEventListener('pointerdown', e => {
+    const t = e.target; if (!t || !t.closest) return;
+    const inside = sel => !!t.closest(sel);
+    const anyOpen = () => !!(document.querySelector('.tb-popover.open,.pd-fly.open,#nodeStyleDrawer.open,#tabMore.open,#linkPanel.open') ||
+      (document.getElementById('contextMenu') && !['', 'none'].includes(document.getElementById('contextMenu').style.display)));
+    const was = anyOpen();
+    try {
+      // menus da barra de cima (Arquivo, Layout, Alinhar, Aparência, Snap…)
+      if (document.querySelector('.tb-popover.open') && !inside('.tb-dropdown') && !inside('.tb-popover') && typeof closeAllToolbarPopovers === 'function') closeAllToolbarPopovers();
+      // painéis da barra lateral de canetas (formas, cor/espessura)
+      if (!inside('.pd-anchor')) document.querySelectorAll('.pd-fly.open').forEach(x => x.classList.remove('open'));
+      // menu de contexto
+      const cm = document.getElementById('contextMenu');
+      if (cm && cm.style.display && cm.style.display !== 'none' && !inside('#contextMenu') && typeof hideContextMenu === 'function') hideContextMenu();
+      // gaveta "Cores & Estilo" do balão
+      const dr = document.getElementById('nodeStyleDrawer');
+      if (dr && dr.classList.contains('open') && !inside('#nodeStyleDrawer') && !inside('#nodeFloatPanel') && !inside('#nodeFloatPill')) dr.classList.remove('open');
+      // menu ⋯ do tablet
+      const tm = document.getElementById('tabMore');
+      if (tm && tm.classList.contains('open') && !inside('#tabMore') && !inside('#tabDock [data-act="more"]')) tm.classList.remove('open');
+      // janelas de leitura/escolha: toque no fundo escurecido fecha
+      if (t.tagName === 'DIALOG' && SAFE_DIALOGS.includes(t.id) && t.open) {
+        const r = t.getBoundingClientRect();
+        if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) { t.close(); e.preventDefault(); }
+      }
+      // painéis laterais (Estrutura / Propriedades): toque com o dedo ou mouse no FUNDO vazio do mapa
+      const sv = document.getElementById('svg');
+      if (e.pointerType !== 'pen' && sv && sv.contains(t) && !t.closest('.node,.drawing-item,.link-hit,.cross-link-path,.cross-link-label-group,.anchor-handle,.resize-hit')) {
+        const lp = document.getElementById('leftOutlinePanel'), rp = document.getElementById('rightInspectorPanel');
+        if (lp && lp.classList.contains('open') && typeof toggleLeftOutlinePanel === 'function') toggleLeftOutlinePanel(false);
+        if (rp && rp.classList.contains('open') && typeof toggleRightInspectorPanel === 'function') toggleRightInspectorPanel(false);
+      }
+      // caixas novas registram seu próprio "fechar" aqui (painel do conector, opções de seleção…)
+      window.__outsideClose.forEach(f => { try { f(t, e); } catch (_) {} });
+      // o toque que só serviu para fechar uma caixa não conta como 1º toque de um "toque duplo"
+      if (was && !anyOpen()) window.__lastOutsideClose = performance.now();
+    } catch (_) {}
+  }, true);
+  // toque duplo "nativo" do navegador logo depois de um toque que fechou uma caixa: ignora (não cria balão)
+  window.addEventListener('dblclick', e => {
+    if (performance.now() - (window.__lastOutsideClose || -1e9) < 900) { e.preventDefault(); e.stopImmediatePropagation(); }
+  }, true);
+})();
+
+</script>
+<script>
+/* =====================================================================
    MINDMAP STUDIO — CAMADA TABLET (Galaxy Tab S10 Lite · S Pen + toque)
    Carregada ANTES do app: recebe os toques primeiro e decide a quem pertencem.
    • Dedo: 1 dedo no fundo = mover a tela · 2 dedos = pinça (zoom) + mover · toque longo = menu
@@ -119,6 +174,7 @@
     target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, detail: 2, view: window }));
   }
   function trackTap(e, startT, sx, sy) {
+    if (now() - (window.__lastOutsideClose || -1e9) < 700) { T.lastTap = null; return; }   // toque que fechou uma caixa
     if (Math.hypot(e.clientX - sx, e.clientY - sy) > SLOP || now() - startT > 380) { T.lastTap = null; return; }
     const t = under(e.clientX, e.clientY);
     if (!t || !inSvg(t)) { T.lastTap = null; return; }
@@ -269,10 +325,62 @@
   const touchingNoPressure = e => e.pointerType === 'pen' && e.width != null && e.width < 0.5 && e.height < 0.5;
   // com o botão apertado, "está apagando?": encostou (0×0) — ou, se o aparelho nunca avisou contato com o botão
   // (ou a opção "apagar também no ar" está ligada), vale a ponta perto da tela (pairando)
-  const btnErasing = (e, learn) => {
-    if (touchingNoPressure(e)) { if (learn && T.learnBtnContact) T.learnBtnContact(); return true; }
-    return !!(T.btnHover || !T.btnContactOK);
+  // botão apertado = apaga, pairando OU encostado. (Tentar distinguir os dois falhava neste tablet:
+  // com o botão apertado ele não informa o contato de forma confiável.)
+  const btnErasing = () => true;
+
+  /* ---------- SESSÃO DA BORRACHA DO BOTÃO ----------
+     Começa quando o botão da S Pen é percebido (pairando). Enquanto durar, TUDO o que a caneta mandar apaga:
+     pairando, encostando (com ou sem pressão), e mesmo se o Android, ao encostar com o botão apertado,
+     "cancelar" a caneta e passar a mandar os eventos como mouse (botão direito) ou como toque.
+     Antes, encostar a ponta encerrava a borracha — era exatamente essa troca de tipo de evento.
+     Termina quando a caneta volta a pairar SEM o botão, ou depois de 0,7 s sem nenhum evento. */
+  const BS = T.btnSess = { on: false, t: 0, x: 0, y: 0, timer: 0 };
+  function erMoveAny(e) {
+    const nat = (typeof e.getCoalescedEvents === 'function' && e.getCoalescedEvents().length) ? e.getCoalescedEvents() : [e];
+    for (const n of nat) {
+      const q = worldPoint(n.clientX, n.clientY), L = ER.last || q, r = erRadius();
+      const steps = Math.max(1, Math.min(16, Math.ceil(Math.hypot(q.x - L.x, q.y - L.y) / (r * 0.8))));
+      for (let k = 1; k <= steps; k++) erAt({ x: L.x + (q.x - L.x) * k / steps, y: L.y + (q.y - L.y) * k / steps });
+      ER.last = q;
+    }
+  }
+  function bsEnd() {
+    if (!BS.on) return;
+    BS.on = false; clearTimeout(BS.timer);
+    if (P.active && P.active.eraser) { erEnd(); P.active = null; }
+    P.hoverBtn = false; P.down = false; P.armed = false; P.armSrc = null; P.byDown = false;
+    setFlag();
+  }
+  const bsAlive = () => { BS.t = now(); T.lastBarrelT = now(); clearTimeout(BS.timer); BS.timer = setTimeout(bsEnd, 700); };
+  T.bsStart = e => { if (!BS.on) { BS.on = true; BS.x = e.clientX; BS.y = e.clientY; } bsAlive(); };
+  function bsErase(e, on) {
+    if (T.moveRing) T.moveRing(e.clientX, e.clientY, on);
+    if (!on) { if (P.active && P.active.eraser) { erEnd(); P.active = null; } return; }
+    if (!(P.active && P.active.eraser)) { P.active = { eraser: true, sz: true }; erStart(e); }
+    else erMoveAny(e);
+  }
+  const bsHandler = e => {
+    if (!BS.on || e.__tabSynth) return;
+    const t = e.type, isMove = t === 'pointermove' || t === 'pointerdown';
+    if (e.pointerType === 'pen') {
+      // voltou a pairar sem o botão: fim da borracha (o evento segue para o roteador normal)
+      if (t === 'pointermove' && e.buttons === 0 && !(e.pressure > 0)) { bsEnd(); return; }
+      swallow(e); bsAlive(); BS.x = e.clientX; BS.y = e.clientY; T.lastPenT = now();
+      if (!isMove) return;                                        // "soltou"/"cancelou" com o botão apertado: a sessão continua
+      bsErase(e, inSvg(e.target) || !!(P.active && P.active.eraser));
+      return;
+    }
+    // o Android trocou a caneta por "mouse" (botão direito) ou por "toque" perto da ponta: continua apagando
+    const nearPen = Math.hypot(e.clientX - BS.x, e.clientY - BS.y) < 90 || now() - BS.t < 120;
+    if (e.pointerType === 'mouse' || (e.pointerType === 'touch' && nearPen)) {
+      swallow(e); bsAlive(); BS.x = e.clientX; BS.y = e.clientY;
+      if (isMove && e.buttons !== 0) bsErase(e, true);
+    }
   };
+  ['pointerdown', 'pointermove', 'pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, bsHandler, true));
+  // eventos de toque "crus" gerados pela caneta durante a sessão não podem mover a tela nem abrir menus
+  ['touchstart', 'touchmove'].forEach(t => window.addEventListener(t, e => { if (BS.on && e.cancelable) e.preventDefault(); }, { capture: true, passive: false }));
 
   /* ---------- roteador de ponteiros ---------- */
   window.addEventListener('pointerdown', e => {
@@ -347,6 +455,7 @@
       if (!P.down && !P.active) {
         if (!(e.pressure > 0)) {                                     // botão apertado: pairando ou ENCOSTADO (o Tab S10 Lite não manda "pressionar" nem pressão)
           if (!P.hoverBtn) { P.hoverBtn = true; setFlag(); }
+          if (inSvg(e.target) && T.bsStart) T.bsStart(e);
           T.lastBarrelT = now();
           if (inSvg(e.target)) {
             swallow(e);
@@ -403,6 +512,7 @@
     }
     if (G && G.kind === 'pan' && G.id === p.id) { gCommit(G.g, cancelled); T.gesture = null; return; }
     if (p.mode === 'pan' && !p.moved && !cancelled) {                // toque simples no fundo
+      if (window.__tapLink && !inkMode() && window.__tapLink(p.target, e)) return;   // tocou num conector: painel do conector
       try {
         if (typeof hideContextMenu === 'function') hideContextMenu();
         if (!inkMode()) {
@@ -420,7 +530,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 10.4</title>
+<title>MindMap Studio — Tablet 10.6</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2742,6 +2852,58 @@ body.theme-dark #penStudioDock .pd-fly button.ws-btn { background: #1e293b !impo
 /* na barra de cima os botões − e + não aumentam a altura da barra */
 .dct-group .ws-btn { width: 22px !important; height: 22px !important; min-width: 22px; font-size: 15px; border-radius: 7px; }
 body.tab .dct-group .ws-btn { width: 22px !important; height: 22px !important; min-width: 22px; font-size: 15px; }
+
+/* ===== 11.1 conectores, seleção, painel ===== */
+.link-hit { fill: none; stroke: transparent; stroke-width: 18px; pointer-events: stroke; cursor: pointer; }
+body.tab .link-hit { stroke-width: 28px; }
+#svg.mode-draw .link-hit, #svg.mode-eraser .link-hit { pointer-events: none; }
+.link.link-selected, .cross-link-path.link-selected { filter: drop-shadow(0 0 2px #2563eb) drop-shadow(0 0 5px rgba(37,99,235,.65)); }
+.link-hit:hover + .link, .link-hit:hover { }
+@keyframes mmLinkFlow { to { stroke-dashoffset: -60; } }
+.link.link-flow, .cross-link-path.link-flow { animation: mmLinkFlow 1.4s linear infinite; }
+#linkPanel { position: fixed; z-index: 75; display: none; width: 340px; max-width: calc(100vw - 20px); max-height: calc(100vh - 20px); overflow: auto; padding: 10px 12px;
+  border-radius: 14px; background: #fff; border: 1px solid #cbd5e1; box-shadow: 0 16px 44px rgba(15,23,42,.24); font: 13px/1.35 system-ui, sans-serif; color: #0f172a; }
+#linkPanel.open { display: block; }
+#linkPanel .lp-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 14px; }
+#linkPanel .lp-sub { color: #64748b; font-size: 11.5px; }
+#linkPanel .lp-h button { margin-left: auto; border: 0; background: transparent; font-size: 15px; cursor: pointer; color: #475569; }
+#linkPanel .lp-sec { padding: 6px 0; border-top: 1px solid #f1f5f9; }
+#linkPanel .lp-l { font-weight: 600; font-size: 12px; color: #334155; margin-bottom: 4px; }
+#linkPanel .lp-colors, #linkPanel .lp-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+#linkPanel .lp-sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; cursor: pointer; padding: 0; }
+#linkPanel .lp-sw.on { box-shadow: 0 0 0 2px #2563eb; }
+#linkPanel input[type=color] { width: 30px; height: 26px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0; background: #fff; }
+#linkPanel .lp-chip { padding: 4px 8px; border-radius: 8px; border: 1px solid #cbd5e1; background: #f8fafc; color: #0f172a; cursor: pointer; font-size: 12px; min-height: 28px; }
+#linkPanel .lp-chip.on { background: #dbeafe; border-color: #2563eb; color: #1d4ed8; font-weight: 600; }
+#linkPanel .lp-end { min-width: 32px; font-size: 14px; }
+#linkPanel .lp-ends { display: grid; grid-template-columns: 1fr; gap: 6px; }
+#linkPanel .lp-row { display: flex; align-items: center; gap: 6px; }
+#linkPanel .lp-row input[type=range] { flex: 1; }
+#linkPanel output { min-width: 44px; text-align: right; font: 12px ui-monospace, Consolas, monospace; }
+#linkPanel .lp-pm { width: 28px; height: 28px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; font-weight: 700; cursor: pointer; }
+#linkPanel .lp-f { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
+#linkPanel .lp-f button { padding: 6px 9px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; font-size: 12px; }
+body.tab #linkPanel .lp-chip, body.tab #linkPanel .lp-f button { min-height: 36px; }
+body.tab #linkPanel .lp-sw { width: 30px; height: 30px; }
+body.tab #linkPanel .lp-pm { width: 36px; height: 36px; }
+body.theme-dark #linkPanel { background: #1e293b; border-color: #334155; color: #e2e8f0; }
+body.theme-dark #linkPanel .lp-chip, body.theme-dark #linkPanel .lp-f button, body.theme-dark #linkPanel .lp-pm { background: #0f172a; color: #e2e8f0; border-color: #475569; }
+body.theme-dark #linkPanel .lp-l { color: #cbd5e1; }
+/* botões de forma/inclusão da seleção (desktop) */
+.sel-mode-btn { margin-left: 2px; padding: 4px 8px !important; font-size: 12px !important; }
+.sel-mode-btn.on { background: #dbeafe !important; border-color: #2563eb !important; color: #1d4ed8 !important; }
+#tabDock [data-selshape] .i, #tabDock [data-selinc] .i { font-size: 19px; }
+/* o app pinta todos os botões; aqui as cores ficam explícitas */
+#linkPanel button { color: #0f172a !important; text-shadow: none !important; box-shadow: none; }
+#linkPanel .lp-sw { box-shadow: 0 0 0 1px #cbd5e1 !important; }
+#linkPanel .lp-sw.on { box-shadow: 0 0 0 2px #2563eb !important; }
+#linkPanel .lp-chip, #linkPanel .lp-f button, #linkPanel .lp-pm { background: #f8fafc !important; }
+#linkPanel .lp-chip.on { background: #dbeafe !important; color: #1d4ed8 !important; }
+#linkPanel .lp-pm { font-size: 16px !important; }
+#linkPanel .lp-h button { background: transparent !important; color: #475569 !important; }
+body.theme-dark #linkPanel button { color: #e2e8f0 !important; }
+body.theme-dark #linkPanel .lp-chip, body.theme-dark #linkPanel .lp-f button, body.theme-dark #linkPanel .lp-pm { background: #0f172a !important; }
+body.theme-dark #linkPanel .lp-chip.on { background: #1e3a8a !important; color: #dbeafe !important; }
 
 </style>
 </head>
@@ -5398,6 +5560,7 @@ function serializeNode(n) {
     userResized: !!n.userResized,
     anchorIn: n.anchorIn ? { ...n.anchorIn } : null,
     anchorOut: n.anchorOut ? { ...n.anchorOut } : null,
+    link: n.link ? { ...n.link } : null,
     children: (n.children || []).map(serializeNode)
   };
 }
@@ -5428,6 +5591,7 @@ function deserializeNode(n, parent = null) {
     userResized: !!(n.userResized || (n.w && n.h)),
     anchorIn: n.anchorIn ? { ...n.anchorIn } : null,
     anchorOut: n.anchorOut ? { ...n.anchorOut } : null,
+    link: n.link ? { ...n.link } : null,
     children: [],
     parent: parent
   };
@@ -6008,7 +6172,9 @@ function updateLinkPath(n, redrawCross = true){
   const x2 = n.x + ai.x, y2 = n.y + ai.y;
   const path = document.getElementById('link-' + n.id);
   if(path){
-    path.setAttribute('d', computeLinkPathData(x1, y1, x2, y2));
+    const dd = window.__linkD ? window.__linkD(n.link, x1, y1, x2, y2) : computeLinkPathData(x1, y1, x2, y2);
+    path.setAttribute('d', dd);
+    const hp = document.getElementById('linkhit-' + n.id); if (hp) hp.setAttribute('d', dd);
   }
   if (redrawCross) renderCrossLinks();
 }
@@ -6027,12 +6193,14 @@ function renderLinks(){
     const path=document.createElementNS('http://www.w3.org/2000/svg','path');
     path.id = 'link-' + n.id;
     path.classList.add('link');
-    path.setAttribute('d', computeLinkPathData(x1, y1, x2, y2));
+    path.setAttribute('d', window.__linkD ? window.__linkD(n.link, x1, y1, x2, y2) : computeLinkPathData(x1, y1, x2, y2));
     if (currentLinkStyle === 'colored') {
       const col = (n.border && n.border !== 'transparent') ? n.border : (p.border && p.border !== 'transparent' ? p.border : '#2563eb');
       path.style.stroke = col;
     }
+    if (window.__styleLink) window.__styleLink(path, n.link, 'tree:' + n.id);
     links.appendChild(path);
+    if (window.__linkHit) links.appendChild(window.__linkHit('tree', n, path.getAttribute('d')));
   });
   renderCrossLinks();
   if (typeof renderDrawLinks === 'function') renderDrawLinks();
@@ -6061,9 +6229,11 @@ function renderCrossLinks() {
     path.classList.add('cross-link-path');
     path.setAttribute('stroke', col);
     path.setAttribute('marker-end', 'url(#crosslink-arrow)');
-    path.setAttribute('d', `M${x1} ${y1} Q${midX} ${midY} ${x2} ${y2}`);
-    path.onclick = (e) => { e.stopPropagation(); openEditCrossLinkModal(cl); };
+    path.setAttribute('d', (window.__linkD && cl.type) ? window.__linkD(cl, x1, y1, x2, y2) : `M${x1} ${y1} Q${midX} ${midY} ${x2} ${y2}`);
+    if (window.__styleLink) window.__styleLink(path, cl, 'cross:' + (cl.id || (cl.from + '>' + cl.to)), true);
+    path.onclick = (e) => { e.stopPropagation(); if (window.__openLinkPanel) window.__openLinkPanel({ kind: 'cross', cl }, e); else openEditCrossLinkModal(cl); };
     clGroup.appendChild(path);
+    if (window.__crossHit) clGroup.appendChild(window.__crossHit(cl, path));
 
     const labelText = cl.label || '🔗 Conexão';
     const labelG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -8239,6 +8409,7 @@ svg.addEventListener('pointerdown', e => {
     marqueeBox.setAttribute('width', '0');
     marqueeBox.setAttribute('height', '0');
     marqueeBox.style.display = 'block';
+    if (window.__selBegin) window.__selBegin(startPt, marqueeBox);
 
     let movedBox = false;
     canvasMarqueeActive = true;
@@ -8289,12 +8460,13 @@ svg.addEventListener('pointerdown', e => {
       marqueeBox.setAttribute('y', by);
       marqueeBox.setAttribute('width', bw);
       marqueeBox.setAttribute('height', bh);
+      if (window.__selMove) window.__selMove(curPt);
 
       // Seleção em tempo real (Live Marquee)
       const next = new Set(initialSelection);
       let lastHit = null;
       for (const it of mqNodes) {
-        if (it.l < bx + bw && it.r > bx && it.t < by + bh && it.b > by) { next.add(it.n); lastHit = it.n; }
+        if (window.__selHitNode ? window.__selHitNode(it, bx, by, bw, bh) : (it.l < bx + bw && it.r > bx && it.t < by + bh && it.b > by)) { next.add(it.n); lastHit = it.n; }
       }
       selectedNodes.clear();
       next.forEach(n => selectedNodes.add(n));
@@ -8309,7 +8481,7 @@ svg.addEventListener('pointerdown', e => {
         window.selectedDrawings.clear();
         initialDrawSel.forEach(id => window.selectedDrawings.add(id));
         for (const it of mqDraw) {
-          if (it.b.x < bx + bw && it.b.x + it.b.w > bx && it.b.y < by + bh && it.b.y + it.b.h > by) window.selectedDrawings.add(it.d.id);
+          if (window.__selHitDraw ? window.__selHitDraw(it, bx, by, bw, bh) : (it.b.x < bx + bw && it.b.x + it.b.w > bx && it.b.y < by + bh && it.b.y + it.b.h > by)) window.selectedDrawings.add(it.d.id);
         }
         for (const it of mqDraw) {
           const on = window.selectedDrawings.has(it.d.id);
@@ -8333,6 +8505,7 @@ svg.addEventListener('pointerdown', e => {
       applyMarquee();                       // aplica a última posição do mouse mesmo que nenhum quadro tenha rodado
       canvasMarqueeActive = false;
       if (marqueeBox) marqueeBox.style.display = 'none';
+      if (window.__selEnd) window.__selEnd();
 
       if (movedBox) {
         syncSelectionDOM();
@@ -9764,7 +9937,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.4",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.6",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9808,7 +9981,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.4 · 03/11/2026 22:47';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.6 · 04/11/2026 05:56';
  }
  document.body.classList.add('theme-dots');
 
@@ -12156,8 +12329,8 @@ window.createSvgElementForStrokeOrShape = function(s) {
 
       let effOp = itemOpacity;
       if (s.penType === 'highlighter') {
-        effOp = Math.min(0.5, itemOpacity * 0.45);
-        p.style.mixBlendMode = 'multiply';
+        effOp = (s.hl2 && window.hlEff) ? window.hlEff(itemOpacity) : Math.min(0.5, itemOpacity * 0.45);
+        p.style.mixBlendMode = (s.hl2 && effOp >= 0.9) ? 'normal' : 'multiply';
       } else if (s.penType === 'pencil') {
         effOp = Math.min(0.88, itemOpacity * 0.82);
       } else if (s.penType === 'brush' && s.brushProfile === 'watercolor') {
@@ -13404,9 +13577,9 @@ window.runSimulatedPenTabletStroke = function() {
     try { svg.setPointerCapture(e.pointerId); } catch (_) {}
     const r = ensureLiveCanvas();
     const w = window.penStrokeWidth * zoomComp();
-    const effOp = activeTool === 'highlighter' ? Math.min(0.5, ((window.penOpacity || 100) / 100) * 0.45) : (activeTool === 'pencil' ? Math.min(0.85, (window.penOpacity || 100) / 100) : (window.penOpacity || 100) / 100);
+    const effOp = activeTool === 'highlighter' ? (window.hlEff ? window.hlEff((window.penOpacity || 100) / 100) : Math.min(0.5, ((window.penOpacity || 100) / 100) * 0.45)) : (activeTool === 'pencil' ? Math.min(0.85, (window.penOpacity || 100) / 100) : (window.penOpacity || 100) / 100);
     cv.style.opacity = String(effOp);
-    cv.style.mixBlendMode = activeTool === 'highlighter' ? 'multiply' : 'normal';
+    cv.style.mixBlendMode = (activeTool === 'highlighter' && effOp < 0.9) ? 'multiply' : 'normal';
 
     ses = {
       id: e.pointerId,
@@ -13629,6 +13802,7 @@ window.runSimulatedPenTabletStroke = function() {
       dCenter: buildSmoothCenterlinePath(finalPts, isClosed)
     };
     if (s.shape) item.geom = s.shape;
+    if (s.tool === 'highlighter') item.hl2 = 1;
     if ((s.tool === 'fountain' || (s.tool === 'brush' && window.penBrushProfile !== 'watercolor')) && item.lineStyle === 'solid') {
       item.dOutline = buildInkOutline(finalPts, s.size, s.tool, item.brushProfile);
     }
@@ -16255,7 +16429,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 10.4 · 03/11/2026 22:47';
+  window.APP_BUILD = 'Tablet 10.6 · 04/11/2026 05:56';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16316,12 +16490,11 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabPenAlways"> ✍️ S Pen sempre escreve (troca para Caneta ao encostar)</label>
     <label><input type="checkbox" id="tabShapes"> 📐 Desenhar e segurar a S Pen parada transforma em forma perfeita (retângulo, círculo, elipse, triângulo)</label>
     <label><input type="checkbox" id="tabHoldAll"> 📏 Segurar parado no fim do traço deixa reto também nas canetas (no marca-texto já é sempre)</label>
-    <label><input type="checkbox" id="tabBtnHover"> 🧽 Botão da S Pen apaga também com a ponta no ar (use se encostando não apagar)</label>
     <button data-act="fit">⊡ Enquadrar o mapa</button>
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 10.4 · 03/11/2026 22:47</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 10.6 · 04/11/2026 05:56</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16340,8 +16513,7 @@ async function sdxRunImport() {
   T.btnHover = prefs.btnHover === true;
   T.btnContactOK = !!prefs.btnContactOK;
   T.learnBtnContact = () => { if (!T.btnContactOK) { T.btnContactOK = prefs.btnContactOK = true; savePrefs(); } };
-  $('tabBtnHover').checked = T.btnHover;
-  $('tabBtnHover').onchange = e => { T.btnHover = prefs.btnHover = e.target.checked; savePrefs(); };
+
   if (standalone || !document.documentElement.requestFullscreen) $('tabFullBtn').style.display = 'none';
 
   const setMode = m => {
@@ -16411,7 +16583,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 10.4 · 03/11/2026 22:47</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 10.6 · 04/11/2026 05:56</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
@@ -16650,6 +16822,376 @@ async function sdxRunImport() {
   }
   T.checkUpdate = checkUpdate;
 })();
+
+</script>
+<script>
+/* =====================================================================
+   11.1 — conectores editáveis · seleção laço/retângulo (parcial/integral) · marca-texto até cobrir
+   ===================================================================== */
+(function v11() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const $ = id => document.getElementById(id);
+  const PREF = 'mm_v11_prefs';
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREF) || '{}'); } catch (_) { return {}; } })();
+  const save = () => { try { localStorage.setItem(PREF, JSON.stringify(prefs)); } catch (_) {} };
+  const say = t => { try { status.textContent = t; } catch (_) {} };
+  const dark = () => document.body.classList.contains('theme-dark');
+
+  /* ================= 4) MARCA-TEXTO ================= */
+  // opacidade do controle → transparência real. 70% = o marca-texto clássico; 100% = cor cheia (cobre o que está embaixo)
+  window.hlEff = op => { op = Math.max(0.1, Math.min(1, Number(op) || 1)); return Math.min(1, op <= 0.7 ? op * (0.45 / 0.7) : 0.45 + (op - 0.7) / 0.3 * 0.55); };
+  // o marca-texto lembra a SUA opacidade, separada das canetas
+  let hlOp = prefs.hlOpacity || 70, penOp = null;
+  const setOpQuiet = v => {
+    window.penOpacity = v;
+    const sl = $('dctOpacitySlider'), lb = $('dctOpacityLabel');
+    if (sl) sl.value = String(v); if (lb) lb.textContent = v + '%';
+    try { updateLiveStrokePreview(); } catch (_) {}
+  };
+  if (typeof window.setPenSubTool === 'function') {
+    const o = window.setPenSubTool;
+    window.setPenSubTool = function (tool) {
+      const prev = window.penSubTool;
+      if (prev === 'highlighter' && tool !== 'highlighter') { hlOp = prefs.hlOpacity = window.penOpacity || 70; save(); }
+      const r = o.apply(this, arguments);
+      if (tool === 'highlighter' && prev !== 'highlighter') {
+        penOp = window.penOpacity || 100; setOpQuiet(hlOp);
+        say('🖍️ Marca-texto: opacidade ' + hlOp + '% (70% = clássico · 100% = cobre totalmente o que está embaixo).');
+      } else if (prev === 'highlighter' && tool !== 'highlighter' && penOp != null) { setOpQuiet(penOp); penOp = null; }
+      return r;
+    };
+  }
+
+  /* ================= 2) CONECTORES ================= */
+  const TYPES = [['bezier', '〰️ Curva'], ['straight', '📏 Reta'], ['orthogonal', '📐 Cotovelo'], ['rounded', '⤷ Cotovelo arredondado'], ['arc', '◠ Arco']];
+  const ENDS = [['none', 'Nenhuma', ''], ['arrow', 'Seta', '➤'], ['open', 'Seta aberta', '›'], ['dot', 'Bola', '●'], ['ring', 'Bola vazada', '○'],
+    ['diamond', 'Losango', '◆'], ['square', 'Quadrado', '■'], ['bar', 'Barra', '┃']];
+  const DASH = [['solid', 'Contínua'], ['dashed', 'Tracejada'], ['dotted', 'Pontilhada']];
+  const COLORS = ['#64748b', '#0f172a', '#2563eb', '#16a34a', '#dc2626', '#ea580c', '#ca8a04', '#9333ea', '#db2777', '#0891b2'];
+
+  // forma do caminho por tipo
+  window.__linkD = function (L, x1, y1, x2, y2) {
+    const type = (L && L.type) || (typeof currentLinkStyle !== 'undefined' && currentLinkStyle !== 'colored' ? currentLinkStyle : 'bezier');
+    if (type === 'straight') return `M${x1} ${y1} L${x2} ${y2}`;
+    if (type === 'orthogonal') { const mx = x1 + (x2 - x1) * 0.5; return `M${x1} ${y1} L${mx} ${y1} L${mx} ${y2} L${x2} ${y2}`; }
+    if (type === 'rounded') {
+      const mx = x1 + (x2 - x1) * 0.5, sy = Math.sign(y2 - y1) || 1, sx = Math.sign(x2 - x1) || 1;
+      const r = Math.max(0, Math.min(16, Math.abs(y2 - y1) / 2, Math.abs(x2 - x1) / 2));
+      return `M${x1} ${y1} L${mx - sx * r} ${y1} Q${mx} ${y1} ${mx} ${y1 + sy * r} L${mx} ${y2 - sy * r} Q${mx} ${y2} ${mx + sx * r} ${y2} L${x2} ${y2}`;
+    }
+    if (type === 'arc') {
+      const dx = x2 - x1, dy = y2 - y1, d = Math.hypot(dx, dy) || 1, k = 0.28;
+      const cx = (x1 + x2) / 2 - dy / d * d * k, cy = (y1 + y2) / 2 + dx / d * d * k;
+      return `M${x1} ${y1} Q${cx} ${cy} ${x2} ${y2}`;
+    }
+    const dx = (x2 - x1) * 0.5;
+    return `M${x1} ${y1} C${x1 + dx} ${y1},${x2 - dx} ${y2},${x2} ${y2}`;
+  };
+  // pontas (markers) — uma por forma+cor, criadas sob demanda
+  function marker(shape, color) {
+    if (!shape || shape === 'none') return null;
+    const id = 'lm-' + shape + '-' + String(color).replace(/[^a-z0-9]/gi, '');
+    if ($(id)) return id;
+    const defs = document.querySelector('#svg defs'); if (!defs) return null;
+    const m = document.createElementNS(NS, 'marker');
+    m.id = id; m.setAttribute('viewBox', '0 0 10 10'); m.setAttribute('markerWidth', '4.2'); m.setAttribute('markerHeight', '4.2');
+    m.setAttribute('orient', 'auto-start-reverse'); m.setAttribute('refY', '5');
+    m.setAttribute('refX', shape === 'arrow' || shape === 'open' ? '9' : '5');
+    let el;
+    const mk = (tag, a) => { const e = document.createElementNS(NS, tag); for (const k in a) e.setAttribute(k, a[k]); return e; };
+    if (shape === 'arrow') el = mk('path', { d: 'M0 0.5 L10 5 L0 9.5 z', fill: color });
+    else if (shape === 'open') el = mk('path', { d: 'M1 1 L9 5 L1 9', fill: 'none', stroke: color, 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
+    else if (shape === 'dot') el = mk('circle', { cx: 5, cy: 5, r: 4, fill: color });
+    else if (shape === 'ring') el = mk('circle', { cx: 5, cy: 5, r: 3.6, fill: dark() ? '#0f172a' : '#ffffff', stroke: color, 'stroke-width': '1.8' });
+    else if (shape === 'diamond') el = mk('path', { d: 'M0 5 L5 0.5 L10 5 L5 9.5 z', fill: color });
+    else if (shape === 'square') el = mk('rect', { x: 1, y: 1, width: 8, height: 8, fill: color });
+    else if (shape === 'bar') el = mk('path', { d: 'M5 0 L5 10', stroke: color, 'stroke-width': '2.4' });
+    if (!el) return null;
+    m.appendChild(el); defs.appendChild(m);
+    return id;
+  }
+  const baseColor = (path, cross) => cross ? (path.getAttribute('stroke') || '#db2777') : (path.style.stroke || (dark() ? '#94a3b8' : '#64748b'));
+  window.__styleLink = function (path, L, key, cross) {
+    L = L || {};
+    if (L.color) { path.style.stroke = L.color; if (cross) path.setAttribute('stroke', L.color); }
+    const w = L.width || (cross ? 2.5 : 3);
+    if (L.width) path.style.strokeWidth = String(L.width);
+    const dash = L.dash || (cross ? 'dashed' : 'solid');
+    if (dash === 'dashed') { path.style.strokeDasharray = `${Math.max(6, w * 2.6)} ${Math.max(5, w * 1.8)}`; path.style.strokeLinecap = 'butt'; }
+    else if (dash === 'dotted') { path.style.strokeDasharray = `0.1 ${Math.max(5, w * 2.2)}`; path.style.strokeLinecap = 'round'; }
+    else if (L.dash === 'solid') path.style.strokeDasharray = 'none';
+    const col = L.color || baseColor(path, cross);
+    const ms = marker(L.start, col), me = marker(cross && !L.end ? 'arrow' : L.end, col);
+    if (ms) path.setAttribute('marker-start', `url(#${ms})`); else path.removeAttribute('marker-start');
+    if (me) path.setAttribute('marker-end', `url(#${me})`); else path.removeAttribute('marker-end');
+    if (L.opacity != null && L.opacity < 1) path.style.opacity = String(L.opacity);
+    path.classList.toggle('link-flow', !!L.flow);
+    if (L.flow && dash === 'solid') path.style.strokeDasharray = `${Math.max(8, w * 3)} ${Math.max(6, w * 2)}`;
+    path.classList.toggle('link-selected', window.__selLinkKey === key);
+    path.dataset.lkey = key;
+  };
+  // área de toque larga e invisível sobre cada conector
+  window.__linkHit = function (kind, n, d) {
+    const h = document.createElementNS(NS, 'path');
+    h.id = 'linkhit-' + n.id; h.classList.add('link-hit'); h.setAttribute('d', d);
+    h.addEventListener('pointerdown', e => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      h.__down = { x: e.clientX, y: e.clientY };                  // sem bloquear: arrastar a partir daqui ainda faz seleção/pan
+    });
+    h.addEventListener('pointerup', e => {
+      const D = h.__down; h.__down = null;
+      if (!D || Math.hypot(e.clientX - D.x, e.clientY - D.y) > 10) return;
+      e.stopPropagation();
+      openPanel({ kind: 'tree', n }, e);
+    });
+    return h;
+  };
+
+  window.__crossHit = function (cl, path) {
+    const h = document.createElementNS(NS, 'path');
+    h.classList.add('link-hit'); h.setAttribute('d', path.getAttribute('d')); h.__cl = cl;
+    h.addEventListener('pointerdown', e => { if (e.button !== 0 && e.pointerType === 'mouse') return; h.__down = { x: e.clientX, y: e.clientY }; });
+    h.addEventListener('pointerup', e => { const D = h.__down; h.__down = null; if (!D || Math.hypot(e.clientX - D.x, e.clientY - D.y) > 10) return; e.stopPropagation(); openPanel({ kind: 'cross', cl }, e); });
+    return h;
+  };
+
+  // ---------- painel do conector ----------
+  const pan = document.createElement('div'); pan.id = 'linkPanel';
+  pan.innerHTML = `
+    <div class="lp-h"><b>🔗 Conector</b><span class="lp-sub"></span><button type="button" data-x title="Fechar">✕</button></div>
+    <div class="lp-sec"><div class="lp-l">Cor</div><div class="lp-colors">${COLORS.map(c => `<button type="button" class="lp-sw" data-color="${c}" style="background:${c}" title="${c}"></button>`).join('')}<input type="color" data-color-pick title="Outra cor"><button type="button" class="lp-chip" data-color="" title="Cor automática do mapa">Auto</button></div></div>
+    <div class="lp-sec"><div class="lp-l">Grossura</div><div class="lp-row"><button type="button" class="lp-pm" data-w="-1">−</button><input type="range" min="1" max="14" step="0.5" data-width><button type="button" class="lp-pm" data-w="1">+</button><output data-wout></output></div></div>
+    <div class="lp-sec"><div class="lp-l">Tipo</div><div class="lp-chips">${TYPES.map(([v, t]) => `<button type="button" class="lp-chip" data-type="${v}">${t}</button>`).join('')}</div></div>
+    <div class="lp-sec"><div class="lp-l">Linha</div><div class="lp-chips">${DASH.map(([v, t]) => `<button type="button" class="lp-chip" data-dash="${v}">${t}</button>`).join('')}<button type="button" class="lp-chip" data-flow>✨ Fluxo animado</button></div></div>
+    <div class="lp-sec lp-ends"><div><div class="lp-l">Ponta no início</div><div class="lp-chips">${ENDS.map(([v, t, s]) => `<button type="button" class="lp-chip lp-end" data-start="${v}" title="${t}">${s || '∅'}</button>`).join('')}</div></div>
+      <div><div class="lp-l">Ponta no fim</div><div class="lp-chips">${ENDS.map(([v, t, s]) => `<button type="button" class="lp-chip lp-end" data-end="${v}" title="${t}">${s || '∅'}</button>`).join('')}</div></div></div>
+    <div class="lp-sec"><div class="lp-l">Transparência</div><div class="lp-row"><input type="range" min="0.2" max="1" step="0.05" data-op><output data-oout></output></div></div>
+    <div class="lp-f"><button type="button" data-apply="branch" title="Copia este estilo para todos os conectores abaixo deste ramo">Aplicar ao ramo</button><button type="button" data-apply="all" title="Copia este estilo para todos os conectores do mapa">Aplicar a todos</button><button type="button" data-reset>↺ Padrão</button><button type="button" data-label>✏️ Rótulo…</button></div>`;
+  document.body.appendChild(pan);
+  const q = s => pan.querySelector(s), qa = s => pan.querySelectorAll(s);
+  let T = null, dirty = false;
+  const getL = () => T.kind === 'tree' ? (T.n.link || (T.n.link = {})) : T.cl;
+  const keyOf = t => t.kind === 'tree' ? 'tree:' + t.n.id : 'cross:' + (t.cl.id || (t.cl.from + '>' + t.cl.to));
+  function firstChange() {
+    if (dirty) return; dirty = true;
+    try { saveState(); } catch (_) {}
+  }
+  function redraw() {
+    try { renderLinks(); } catch (_) {}
+    try { markUnsavedChanges(true); } catch (_) {}
+    try { scheduleLocalAutoBackup(); } catch (_) {}
+  }
+  function fill() {
+    const L = getL(), cross = T.kind === 'cross';
+    q('.lp-sub').textContent = cross ? 'conexão cruzada' : 'ligação do ramo';
+    qa('[data-color]').forEach(b => b.classList.toggle('on', (b.dataset.color || '') === (L.color || '')));
+    q('[data-color-pick]').value = /^#[0-9a-f]{6}$/i.test(L.color || '') ? L.color : '#64748b';
+    const w = L.width || (cross ? 2.5 : 3); q('[data-width]').value = w; q('[data-wout]').textContent = String(w).replace('.', ',') + 'px';
+    const ty = L.type || (cross ? 'arc' : (typeof currentLinkStyle !== 'undefined' && currentLinkStyle !== 'colored' ? currentLinkStyle : 'bezier'));
+    qa('[data-type]').forEach(b => b.classList.toggle('on', b.dataset.type === ty));
+    const da = L.dash || (cross ? 'dashed' : 'solid');
+    qa('[data-dash]').forEach(b => b.classList.toggle('on', b.dataset.dash === da));
+    q('[data-flow]').classList.toggle('on', !!L.flow);
+    qa('[data-start]').forEach(b => b.classList.toggle('on', b.dataset.start === (L.start || 'none')));
+    qa('[data-end]').forEach(b => b.classList.toggle('on', b.dataset.end === (L.end || (cross ? 'arrow' : 'none'))));
+    const op = L.opacity != null ? L.opacity : 1; q('[data-op]').value = op; q('[data-oout]').textContent = Math.round(op * 100) + '%';
+    q('[data-label]').style.display = cross ? '' : 'none';
+    q('[data-apply="branch"]').style.display = cross ? 'none' : '';
+  }
+  function openPanel(target, ev) {
+    T = target; dirty = false;
+    window.__selLinkKey = keyOf(target);
+    try { hideContextMenu(); closeAllToolbarPopovers(); } catch (_) {}
+    redraw(); fill();
+    pan.classList.add('open');
+    const W = pan.offsetWidth, H = pan.offsetHeight;
+    let x = (ev && ev.clientX || innerWidth / 2) + 16, y = (ev && ev.clientY || innerHeight / 2) - 40;
+    if (x + W > innerWidth - 10) x = Math.max(10, (ev ? ev.clientX : innerWidth) - W - 16);
+    y = Math.max(10, Math.min(y, innerHeight - H - 10));
+    pan.style.left = x + 'px'; pan.style.top = y + 'px';
+    say('🔗 Conector selecionado: escolha cor, grossura, tipo e pontas. Toque fora para fechar.');
+  }
+  window.__openLinkPanel = openPanel;
+  // toque (tablet) num conector: abre o painel — chamado pelo controle de gestos do tablet
+  window.__tapLink = (t, ev) => {
+    const h = t && t.closest && t.closest('.link-hit'); if (!h) return false;
+    if (h.id && h.id.startsWith('linkhit-')) { const n = nodeMap.get(h.id.slice(8)); if (n) { openPanel({ kind: 'tree', n }, ev); return true; } }
+    if (h.__cl) { openPanel({ kind: 'cross', cl: h.__cl }, ev); return true; }
+    return false;
+  };
+  function closePanel() { if (!pan.classList.contains('open')) return; pan.classList.remove('open'); window.__selLinkKey = null; T = null; try { renderLinks(); } catch (_) {} }
+  window.__closeLinkPanel = closePanel;
+  (window.__outsideClose = window.__outsideClose || []).push(t => { if (!t.closest('#linkPanel') && !t.closest('.link-hit') && !t.closest('.cross-link-path')) closePanel(); });
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+  const set = (k, v) => { if (!T) return; firstChange(); const L = getL(); if (v === '' || v == null) delete L[k]; else L[k] = v; redraw(); fill(); };
+  pan.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || !T) return;
+    if (b.hasAttribute('data-x')) return closePanel();
+    if (b.dataset.color !== undefined) return set('color', b.dataset.color);
+    if (b.dataset.type) return set('type', b.dataset.type);
+    if (b.dataset.dash) return set('dash', b.dataset.dash);
+    if (b.hasAttribute('data-flow')) return set('flow', getL().flow ? '' : true);
+    if (b.dataset.start) return set('start', b.dataset.start === 'none' ? '' : b.dataset.start);
+    if (b.dataset.end) return set('end', b.dataset.end);
+    if (b.dataset.w) { const L = getL(); const w = Math.max(1, Math.min(14, (L.width || (T.kind === 'cross' ? 2.5 : 3)) + Number(b.dataset.w) * 0.5)); return set('width', w); }
+    if (b.hasAttribute('data-reset')) {
+      firstChange();
+      if (T.kind === 'tree') T.n.link = null; else ['color', 'width', 'type', 'dash', 'flow', 'start', 'end', 'opacity'].forEach(k => delete T.cl[k]);
+      if (T.kind === 'tree') T.n.link = {};
+      redraw(); fill(); return;
+    }
+    if (b.hasAttribute('data-label') && T.kind === 'cross') { const cl = T.cl; closePanel(); try { openEditCrossLinkModal(cl); } catch (_) {} return; }
+    if (b.dataset.apply) {
+      firstChange();
+      const L = { ...getL() };
+      const apply = n => { if (n.parent && !n.independent) n.link = { ...L }; };
+      if (b.dataset.apply === 'branch' && T.kind === 'tree') { const walk = n => { (n.children || []).forEach(c => { apply(c); walk(c); }); }; walk(T.n); }
+      else { nodeMap.forEach(apply); (window.crossLinks || (typeof crossLinks !== 'undefined' ? crossLinks : [])).forEach(cl => Object.assign(cl, L)); }
+      redraw(); fill();
+      say(b.dataset.apply === 'branch' ? '🔗 Estilo aplicado aos conectores deste ramo.' : '🔗 Estilo aplicado a todos os conectores.');
+    }
+  });
+  q('[data-color-pick]').addEventListener('input', e => set('color', e.target.value));
+  q('[data-width]').addEventListener('input', e => set('width', Number(e.target.value)));
+  q('[data-op]').addEventListener('input', e => set('opacity', Number(e.target.value) >= 1 ? '' : Number(e.target.value)));
+  pan.addEventListener('pointerdown', e => e.stopPropagation());
+
+  /* ================= 3) SELEÇÃO: RETÂNGULO / LAÇO · PARCIAL / INTEGRAL ================= */
+  window.selShape = prefs.selShape || 'rect';          // 'rect' | 'lasso'
+  window.selInclude = prefs.selInclude || 'partial';   // 'partial' | 'full'
+  let L = null, lassoEl = null, mbox = null;
+  window.__selBegin = (p0, box) => {
+    mbox = box;
+    L = { pts: [p0], minx: p0.x, maxx: p0.x, miny: p0.y, maxy: p0.y };
+    if (window.selShape === 'lasso') {
+      if (!lassoEl) {
+        lassoEl = document.createElementNS(NS, 'path'); lassoEl.id = 'lasso-path';
+        lassoEl.setAttribute('fill', 'rgba(37,99,235,0.10)'); lassoEl.setAttribute('stroke', '#2563eb');
+        lassoEl.setAttribute('stroke-width', '1.5'); lassoEl.setAttribute('stroke-dasharray', '5 3'); lassoEl.setAttribute('vector-effect', 'non-scaling-stroke');
+        lassoEl.style.pointerEvents = 'none';
+      }
+      const world = $('world'); if (world && lassoEl.parentNode !== world) world.appendChild(lassoEl);
+      lassoEl.setAttribute('d', ''); lassoEl.style.display = 'block';
+      box.style.opacity = '0';
+    } else box.style.opacity = '';
+    box.setAttribute('stroke-dasharray', window.selInclude === 'full' ? '2 0' : '5 3');
+  };
+  window.__selMove = p => {
+    if (!L || window.selShape !== 'lasso') return;
+    const a = L.pts[L.pts.length - 1];
+    if (Math.hypot(p.x - a.x, p.y - a.y) * (typeof scale !== 'undefined' ? scale : 1) < 4) return;
+    L.pts.push(p);
+    L.minx = Math.min(L.minx, p.x); L.maxx = Math.max(L.maxx, p.x); L.miny = Math.min(L.miny, p.y); L.maxy = Math.max(L.maxy, p.y);
+    lassoEl.setAttribute('d', 'M' + L.pts.map(q => q.x.toFixed(1) + ' ' + q.y.toFixed(1)).join(' L') + ' Z');
+  };
+  window.__selEnd = () => { if (lassoEl) lassoEl.style.display = 'none'; if (mbox) mbox.style.opacity = ''; L = null; };
+  const inPoly = (x, y, P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if (((a.y > y) !== (b.y > y)) && (x < (b.x - a.x) * (y - a.y) / ((b.y - a.y) || 1e-9) + a.x)) c = !c; } return c; };
+  const segX = (p1, p2, p3, p4) => {
+    const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x); if (!d) return false;
+    const u = ((p3.x - p1.x) * (p4.y - p3.y) - (p3.y - p1.y) * (p4.x - p3.x)) / d, v = ((p3.x - p1.x) * (p2.y - p1.y) - (p3.y - p1.y) * (p2.x - p1.x)) / d;
+    return u >= 0 && u <= 1 && v >= 0 && v <= 1;
+  };
+  function rectVsPoly(l, t, r, b, P, full) {
+    if (r < L.minx || l > L.maxx || b < L.miny || t > L.maxy) return false;
+    const C = [{ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b }];
+    const M = [{ x: (l + r) / 2, y: t }, { x: r, y: (t + b) / 2 }, { x: (l + r) / 2, y: b }, { x: l, y: (t + b) / 2 }];
+    let edgeCross = false;
+    for (let i = 0; i < P.length && !edgeCross; i++) { const a = P[i], c = P[(i + 1) % P.length]; for (let k = 0; k < 4; k++) if (segX(a, c, C[k], C[(k + 1) % 4])) { edgeCross = true; break; } }
+    if (full) return !edgeCross && C.every(p => inPoly(p.x, p.y, P)) && M.every(p => inPoly(p.x, p.y, P));
+    return edgeCross || C.some(p => inPoly(p.x, p.y, P)) || P.some(p => p.x >= l && p.x <= r && p.y >= t && p.y <= b);
+  }
+  // pontos do desenho no mundo (amostra) — para "integral" e para o laço
+  function drawPts(d) {
+    if (d.__ptsCache && d.__ptsCache.v === d.items) return d.__ptsCache.p;
+    const ox = d.x || 0, oy = d.y || 0, sx = d.scaleX || 1, sy = d.scaleY || 1, rot = (d.rotation || 0) * Math.PI / 180;
+    const b = d.bbox ? { cx: ox + (d.bbox.x + d.bbox.w / 2) * sx, cy: oy + (d.bbox.y + d.bbox.h / 2) * sy } : { cx: ox, cy: oy };
+    const out = [];
+    (d.items || []).forEach(it => {
+      let P = it.pts;
+      if (!P && it.kind === 'shape') P = [{ x: it.x1, y: it.y1 }, { x: it.x2, y: it.y1 }, { x: it.x2, y: it.y2 }, { x: it.x1, y: it.y2 }];
+      if (!P && it.kind === 'image') P = [{ x: it.x1, y: it.y1 }, { x: it.x2, y: it.y2 }, { x: it.x1, y: it.y2 }, { x: it.x2, y: it.y1 }];
+      if (!P) return;
+      const step = Math.max(1, Math.floor(P.length / 40));
+      for (let i = 0; i < P.length; i += step) {
+        let x = ox + P[i].x * sx, y = oy + P[i].y * sy;
+        if (rot) { const c = Math.cos(rot), s = Math.sin(rot), dx = x - b.cx, dy = y - b.cy; x = b.cx + dx * c - dy * s; y = b.cy + dx * s + dy * c; }
+        out.push({ x, y });
+      }
+      const z = P[P.length - 1]; out.push({ x: ox + z.x * sx, y: oy + z.y * sy });
+    });
+    d.__ptsCache = { v: d.items, p: out };
+    return out;
+  }
+  window.__selHitNode = (it, bx, by, bw, bh) => {
+    const full = window.selInclude === 'full';
+    if (window.selShape === 'lasso' && L && L.pts.length >= 3) return rectVsPoly(it.l, it.t, it.r, it.b, L.pts, full);
+    if (window.selShape === 'lasso') return false;
+    if (full) return it.l >= bx && it.r <= bx + bw && it.t >= by && it.b <= by + bh;
+    return it.l < bx + bw && it.r > bx && it.t < by + bh && it.b > by;
+  };
+  window.__selHitDraw = (it, bx, by, bw, bh) => {
+    const full = window.selInclude === 'full', B = it.b;
+    if (window.selShape === 'lasso') {
+      if (!L || L.pts.length < 3) return false;
+      if (B.x > L.maxx || B.x + B.w < L.minx || B.y > L.maxy || B.y + B.h < L.miny) return false;
+      const P = drawPts(it.d);
+      return full ? P.every(p => inPoly(p.x, p.y, L.pts)) : P.some(p => inPoly(p.x, p.y, L.pts)) || rectVsPoly(B.x, B.y, B.x + B.w, B.y + B.h, L.pts, false) && P.length < 3;
+    }
+    if (!(B.x < bx + bw && B.x + B.w > bx && B.y < by + bh && B.y + B.h > by)) return false;
+    if (full) return drawPts(it.d).every(p => p.x >= bx && p.x <= bx + bw && p.y >= by && p.y <= by + bh);
+    return true;
+  };
+
+  // ---------- botões de modo de seleção ----------
+  const icoRect = '▭', icoLasso = '➰';
+  function syncSelBtns() {
+    document.querySelectorAll('[data-selshape]').forEach(b => {
+      const l = window.selShape === 'lasso';
+      b.classList.toggle('on', l);
+      b.querySelector('.t') && (b.querySelector('.t').textContent = l ? 'Laço' : 'Retângulo');
+      b.querySelector('.i') && (b.querySelector('.i').textContent = l ? icoLasso : icoRect);
+      b.title = 'Forma da seleção: ' + (l ? 'LAÇO (desenhe em volta)' : 'RETÂNGULO') + ' — toque para trocar';
+    });
+    document.querySelectorAll('[data-selinc]').forEach(b => {
+      const f = window.selInclude === 'full';
+      b.classList.toggle('on', f);
+      b.querySelector('.t') && (b.querySelector('.t').textContent = f ? 'Integral' : 'Parcial');
+      b.querySelector('.i') && (b.querySelector('.i').textContent = f ? '⬛' : '◩');
+      b.title = f ? 'Seleciona só o que ficar INTEIRO dentro da seleção — toque para trocar' : 'Seleciona tudo o que a seleção TOCAR (parcial) — toque para trocar';
+    });
+  }
+  const toggleShape = () => { window.selShape = prefs.selShape = window.selShape === 'lasso' ? 'rect' : 'lasso'; save(); syncSelBtns(); say(window.selShape === 'lasso' ? '➰ Seleção em LAÇO: arraste contornando o que quer selecionar.' : '▭ Seleção em RETÂNGULO.'); };
+  const toggleInc = () => { window.selInclude = prefs.selInclude = window.selInclude === 'full' ? 'partial' : 'full'; save(); syncSelBtns(); say(window.selInclude === 'full' ? '● Seleção INTEGRAL: só entra o que ficar inteiro dentro.' : '◐ Seleção PARCIAL: entra tudo o que for tocado.'); };
+  window.toggleSelShape = toggleShape; window.toggleSelInclude = toggleInc;
+  const mkBtn = (attr, fn, tablet) => {
+    const b = document.createElement('button'); b.type = 'button'; b.setAttribute(attr, '');
+    b.innerHTML = tablet ? '<span class="i"></span><small class="t"></small>' : '<span class="i"></span> <span class="t"></span>';
+    b.className = tablet ? '' : 'sel-mode-btn';
+    b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); fn(); });
+    return b;
+  };
+  const dock = $('tabDock');
+  if (dock) {                                                    // tablet: na barra de baixo, logo depois de "Seleção"
+    const selB = dock.querySelector('[data-mode="select"]');
+    const b1 = mkBtn('data-selshape', toggleShape, true), b2 = mkBtn('data-selinc', toggleInc, true);
+    selB.after(b1); b1.after(b2);
+  } else {                                                       // desktop: ao lado de "Selecionar"
+    const sb = $('btnModeSelect');
+    if (sb) { const b1 = mkBtn('data-selshape', toggleShape), b2 = mkBtn('data-selinc', toggleInc); sb.after(b1); b1.after(b2); }
+  }
+  syncSelBtns();
+  // atalhos no desktop: Shift+L troca retângulo/laço · Shift+I troca parcial/integral
+  window.addEventListener('keydown', e => {
+    const a = document.activeElement;
+    if (a && (a.isContentEditable || ['INPUT', 'TEXTAREA'].includes(a.tagName))) return;
+    if (document.querySelector('dialog[open]')) return;
+    if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.code === 'KeyL') { e.preventDefault(); e.stopPropagation(); toggleShape(); }
+    else if (e.code === 'KeyI') { e.preventDefault(); e.stopPropagation(); toggleInc(); }
+  }, true);
+})();
+// redesenha os conectores agora que as áreas de toque e estilos existem
+try { renderLinks(); } catch (_) {}
 
 </script>
 </body>
