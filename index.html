@@ -215,7 +215,7 @@
       tiltX: src.tiltX || 0, tiltY: src.tiltY || 0, twist: src.twist || 0, width: src.width || 1, height: src.height || 1,
       button: type === 'pointermove' ? -1 : (eraser ? 5 : 0), buttons: up ? 0 : (eraser ? 32 : 1)
     });
-    ev.__tabSynth = true;
+    ev.__tabSynth = true; ev.__ts = src.__ts != null ? src.__ts : src.timeStamp;
     return ev;
   }
   function emit(type, src, eraser) {
@@ -13348,6 +13348,7 @@ window.runSimulatedPenTabletStroke = function() {
   function renderLiveFrame() {
     const s = ses;
     if (!s || s.isShape) return;
+    if (s.raf) { try { cancelAnimationFrame(s.raf); } catch (_) {} }
     s.raf = 0;
     const pts = s.pred.length ? s.pts.concat(s.pred) : s.pts;
     cx.setTransform(1, 0, 0, 1, 0, 0);
@@ -13638,7 +13639,7 @@ window.runSimulatedPenTabletStroke = function() {
     }
 
     const list = ev.getCoalescedEvents ? ev.getCoalescedEvents() : [];
-    (list.length ? list : [ev]).forEach(c => addSample(c, false));
+    (list.length ? list : [ev]).forEach(c => { const ts = c.__ts != null ? c.__ts : c.timeStamp; if (ses.rawT && ts <= ses.rawT) return; addSample(c, false); });
     ses.pred = [];
     // ponta ao vivo = posição REAL da caneta (o filtro de suavização fica só no corpo do traço) + previsão do Chrome
     if (!ses.ortho && !ses.straight && !ses.shape) {
@@ -13696,7 +13697,38 @@ window.runSimulatedPenTabletStroke = function() {
       ses.hud = now;
       updatePenPressureHUD(ev.pointerType === 'pen' ? ev.pressure : 0, ev.pointerType, ev.tiltX || 0, ev.tiltY || 0, ev.twist || 0);
     }
-    if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame);
+    // v11.2: desenha NA HORA em que a caneta chega (como o canvas de baixa latência espera), sem esperar o próximo quadro.
+    // Se o aparelho ficar lento (traço muito longo), volta sozinho ao modo por quadro para não travar.
+    if (ses.slow) { if (!ses.raf) ses.raf = requestAnimationFrame(renderLiveFrame); }
+    else {
+      const t0 = performance.now();
+      renderLiveFrame();
+      ses.cost = (ses.cost || 0) * 0.7 + (performance.now() - t0) * 0.3;
+      if (ses.cost > 7) ses.slow = true;
+    }
+  }, { passive: true });
+
+  // v11.2: pontos da caneta chegam ASSIM QUE NASCEM (pointerrawupdate), sem esperar o ritmo da tela (~90 Hz).
+  // O pointermove normal continua valendo: ele só completa o que o rawupdate ainda não desenhou. Desligar: window.penRawUpdate = false
+  window.addEventListener('pointerrawupdate', ev => {
+    const S = ses;
+    if (!S || S.isShape || S.ortho || S.straight || S.shape || window.penRawUpdate === false) return;
+    if (ev.pointerId !== S.id || ev.pointerType !== 'pen') return;
+    const list = (typeof ev.getCoalescedEvents === 'function' && ev.getCoalescedEvents().length) ? ev.getCoalescedEvents() : [ev];
+    let last = null;
+    for (const c of list) {
+      if (!(c.pressure > 0) || c.timeStamp <= (S.rawT || 0)) continue;
+      addSample(c, false); S.rawT = c.timeStamp; last = c;
+    }
+    if (!last) return;
+    S.pred = [{ x: (last.clientX - S.r.left - pan.x) / scale, y: (last.clientY - S.r.top - pan.y) / scale, p: S.ps, tx: last.tiltX || 0, ty: last.tiltY || 0 }];
+    if (S.slow) { if (!S.raf) S.raf = requestAnimationFrame(renderLiveFrame); }
+    else {
+      const t0 = performance.now();
+      renderLiveFrame();
+      S.cost = (S.cost || 0) * 0.7 + (performance.now() - t0) * 0.3;
+      if (S.cost > 7) S.slow = true;
+    }
   }, { passive: true });
 
   function finishSession(ev) {
