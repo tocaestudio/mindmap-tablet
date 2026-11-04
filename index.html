@@ -420,7 +420,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 10.1</title>
+<title>MindMap Studio — Tablet 10.3</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -9745,7 +9745,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.1",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 10.3",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -9789,7 +9789,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.1 · 03/11/2026 21:29';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 10.3 · 03/11/2026 22:29';
  }
  document.body.classList.add('theme-dots');
 
@@ -13208,6 +13208,7 @@ window.runSimulatedPenTabletStroke = function() {
 
   function addSample(ev, isEndpoint) {
     const s = ses, r = s.r;
+    if (s.shape) return;
     const mappedP = window.mapHardwarePressure(ev.pressure, ev.pointerType);
     s.ps = s.ps == null ? mappedP : lp(s.ps, mappedP, 0.55);
     const q = isEndpoint
@@ -13448,27 +13449,49 @@ window.runSimulatedPenTabletStroke = function() {
     (list.length ? list : [ev]).forEach(c => addSample(c, false));
     ses.pred = [];
     // ponta ao vivo = posição REAL da caneta (o filtro de suavização fica só no corpo do traço) + previsão do Chrome
-    if (!ses.ortho && !ses.straight) {
+    if (!ses.ortho && !ses.straight && !ses.shape) {
       const lastE = list.length ? list[list.length - 1] : ev;
       ses.pred.push({ x: (lastE.clientX - ses.r.left - pan.x) / scale, y: (lastE.clientY - ses.r.top - pan.y) / scale, p: ses.ps, tx: lastE.tiltX || 0, ty: lastE.tiltY || 0 });
     }
-    if (!ses.ortho && !ses.straight && ev.getPredictedEvents) {
+    if (!ses.ortho && !ses.straight && !ses.shape && ev.getPredictedEvents) {
       ev.getPredictedEvents().slice(0, 2).forEach(pe => {
         const w = { x: (pe.clientX - ses.r.left - pan.x) / scale, y: (pe.clientY - ses.r.top - pan.y) / scale };
         ses.pred.push({ x: w.x, y: w.y, p: ses.ps, tx: pe.tiltX || 0, ty: pe.tiltY || 0 });
       });
     }
-    // segurar parado no fim do traço = linha reta
-    if (!ses.ortho && !ses.straight && (ses.tool === 'highlighter' || window.holdStraightAll)) {
+    // segurar parado no fim do traço: figura fechada vira FORMA perfeita (retângulo, círculo, elipse, triângulo);
+    // traço aberto vira LINHA RETA (marca-texto sempre; canetas se a opção estiver ligada)
+    const holdTools = ['pencil', 'ballpoint', 'fountain', 'brush', 'highlighter', 'dashed'];
+    if (!ses.ortho && !ses.straight && !ses.shape && holdTools.includes(ses.tool) &&
+        (window.shapeRecog !== false || ses.tool === 'highlighter' || window.holdStraightAll)) {
       const L = list.length ? list[list.length - 1] : ev;
       if (!ses.hold || Math.hypot(L.clientX - ses.hold.x, L.clientY - ses.hold.y) > 5) {
         ses.hold = { x: L.clientX, y: L.clientY };
         clearTimeout(ses.holdT);
         const S = ses;
         S.holdT = setTimeout(() => {
-          if (ses !== S || S.straight || S.pts.length < 3) return;
+          if (ses !== S || S.straight || S.shape || S.pts.length < 3) return;
+          if (window.shapeRecog !== false && window.__recognizeShape) {
+            const shp = window.__recognizeShape(S.pts, scale, S.ps);
+            if (shp) {
+              S.shape = shp.kind; S.pred = []; S.pts = shp.pts;
+              if (S.tool === 'fountain' || S.tool === 'brush') S.tool = 'ballpoint';     // forma perfeita = traço de espessura igual
+              if (navigator.vibrate) try { navigator.vibrate(12); } catch (_) {}
+              try { status.textContent = '📐 ' + shp.label + (/a$|Elipse/.test(shp.label) ? ' reconhecida' : ' reconhecido') + '. Levante a caneta para manter (Ctrl+Z desfaz).'; } catch (_) {}
+              renderLiveFrame();
+              return;
+            }
+          }
+          if (!(S.tool === 'highlighter' || window.holdStraightAll)) return;
           const p0 = S.pts[0], wx = (S.hold.x - S.r.left - pan.x) / scale, wy = (S.hold.y - S.r.top - pan.y) / scale;
-          if (Math.hypot(wx - p0.x, wy - p0.y) * scale < 28) return;
+          const chord = Math.hypot(wx - p0.x, wy - p0.y);
+          if (chord * scale < (S.tool === 'highlighter' ? 28 : 40)) return;
+          if (S.tool !== 'highlighter') {
+            // canetas: só endireita traço que já é quase reto (protege a escrita à mão quando você pausa no fim de uma letra)
+            let dev = 0; const ux = (wx - p0.x) / chord, uy = (wy - p0.y) / chord;
+            for (const q of S.pts) dev = Math.max(dev, Math.abs((q.x - p0.x) * uy - (q.y - p0.y) * ux));
+            if (dev > 0.2 * chord) return;
+          }
           S.straight = true; S.pred = [];
           S.pts = [p0, window.__straightEnd(p0, wx, wy, S.ps, 0, 0, scale)];
           if (navigator.vibrate) try { navigator.vibrate(10); } catch (_) {}
@@ -13553,7 +13576,7 @@ window.runSimulatedPenTabletStroke = function() {
       return out.map(q => ({ x: f(q.x), y: f(q.y), p: f(q.p == null ? 1.0 : q.p), tx: q.tx || 0, ty: q.ty || 0 }));
     };
 
-    const finalPts = decimate((s.tool === 'highlighter' && !s.straight && !s.ortho && window.cleanHighlighterPts) ? window.cleanHighlighterPts(s.pts, s.size) : s.pts, 0.28 / scale);
+    const finalPts = decimate((s.tool === 'highlighter' && !s.straight && !s.ortho && !s.shape && window.cleanHighlighterPts) ? window.cleanHighlighterPts(s.pts, s.size) : s.pts, 0.28 / scale);
 
     if (s.tool === 'laser') {
       const p = document.createElementNS(NS, 'path');
@@ -13586,13 +13609,14 @@ window.runSimulatedPenTabletStroke = function() {
       closed: isClosed,
       dCenter: buildSmoothCenterlinePath(finalPts, isClosed)
     };
+    if (s.shape) item.geom = s.shape;
     if ((s.tool === 'fountain' || (s.tool === 'brush' && window.penBrushProfile !== 'watercolor')) && item.lineStyle === 'solid') {
       item.dOutline = buildInkOutline(finalPts, s.size, s.tool, item.brushProfile);
     }
 
     const bb = computePointsBBox(finalPts, Math.max(6, s.size * 1.5));
     const now = Date.now(), prev = lastStrokeGroup.obj;
-    const canMerge = window.penAutoGroupWords && !isClosed && prev && (now - lastStrokeGroup.t < 1800) &&
+    const canMerge = window.penAutoGroupWords && !isClosed && !s.shape && prev && (now - lastStrokeGroup.t < 1800) &&
       window.drawingsList.includes(prev) &&
       prev.scaleX === 1 && prev.scaleY === 1 && !(prev.x || 0) && !(prev.y || 0) && !(prev.rotation || 0) &&
       prev.layer === (window.penLayerTarget || 'fg') &&
@@ -15938,6 +15962,151 @@ async function sdxRunImport() {
   };
 })();
 
+/* ===== Reconhecimento de formas (estilo Samsung Notes): desenhe e segure a caneta parada no fim =====
+   Figura fechada parecida com retângulo / quadrado / círculo / elipse / triângulo → vira a forma perfeita,
+   com tamanho, posição e inclinação próximos aos do desenho. Traço aberto ou rabisco: não é alterado. */
+(function shapeRecognizer() {
+  const hyp = Math.hypot;
+  function hull(P) {                                         // casco convexo (monotone chain)
+    const p = P.map(q => [q.x, q.y]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if (p.length < 3) return p;
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+    up.pop(); lo.pop(); return lo.concat(up);
+  }
+  const area = H => { let a = 0; for (let i = 0; i < H.length; i++) { const p = H[i], q = H[(i + 1) % H.length]; a += p[0] * q[1] - q[0] * p[1]; } return Math.abs(a) / 2; };
+  function minRect(H) {                                      // menor retângulo que envolve (calibres rotativos)
+    let best = null;
+    for (let i = 0; i < H.length; i++) {
+      const p = H[i], q = H[(i + 1) % H.length], L = hyp(q[0] - p[0], q[1] - p[1]); if (L < 1e-6) continue;
+      const ux = (q[0] - p[0]) / L, uy = (q[1] - p[1]) / L;
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const r of H) { const a = r[0] * ux + r[1] * uy, b = -r[0] * uy + r[1] * ux; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+      const A = (a1 - a0) * (b1 - b0);
+      if (!best || A < best.A) best = { A, ux, uy, a0, a1, b0, b1 };
+    }
+    return best;
+  }
+  function maxTri(H) {                                       // maior triângulo dentro do casco
+    const n = H.length; let best = null, bA = -1;
+    const step = Math.max(1, Math.floor(n / 48));
+    for (let i = 0; i < n; i += step) for (let j = i + step; j < n; j += step) for (let k = j + step; k < n; k += step) {
+      const A = Math.abs((H[j][0] - H[i][0]) * (H[k][1] - H[i][1]) - (H[k][0] - H[i][0]) * (H[j][1] - H[i][1])) / 2;
+      if (A > bA) { bA = A; best = [H[i], H[j], H[k]]; }
+    }
+    return { tri: best, A: bA };
+  }
+  const segDist = (p, a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1;
+    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / L2));
+    return hyp(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  };
+  const polyDist = (P, V) => { let s = 0; for (const p of P) { let m = Infinity; for (let i = 0; i < V.length; i++) m = Math.min(m, segDist(p, V[i], V[(i + 1) % V.length])); s += m; } return s / P.length; };
+  // ângulo quase alinhado à tela (±8°) → alinha
+  const snapAng = a => { const q = Math.PI / 2, r = Math.round(a / q) * q; return Math.abs(a - r) < 8 * Math.PI / 180 ? r : a; };
+  // polígono com cantos vivos: pontos extras bem perto de cada canto (a suavização do traço não arredonda o canto)
+  function polyPts(V, p) {
+    // reordena cada aresta (início, perto do início, meio…, perto do fim)
+    const res = [];
+    for (let i = 0; i < V.length; i++) {
+      const a = V[i], b = V[(i + 1) % V.length], L = hyp(b.x - a.x, b.y - a.y), e = Math.min(1.2, L * 0.04), n = Math.max(2, Math.round(L / 18));
+      res.push({ x: a.x, y: a.y, p }, { x: a.x + (b.x - a.x) * (e / L), y: a.y + (b.y - a.y) * (e / L), p });
+      for (let k = 1; k < n; k++) { const t = k / n; if (t * L < 2 * e || (1 - t) * L < 2 * e) continue; res.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, p }); }
+      res.push({ x: b.x - (b.x - a.x) * (e / L), y: b.y - (b.y - a.y) * (e / L), p });
+    }
+    res.push({ x: V[0].x, y: V[0].y, p });
+    return res;
+  }
+  function ellPts(cx, cy, ra, rb, ang, p) {
+    const n = Math.max(48, Math.min(160, Math.round((ra + rb) * 0.9))), c = Math.cos(ang), s = Math.sin(ang), out = [];
+    for (let i = 0; i <= n; i++) { const t = (i / n) * Math.PI * 2, x = ra * Math.cos(t), y = rb * Math.sin(t); out.push({ x: cx + x * c - y * s, y: cy + x * s + y * c, p }); }
+    return out;
+  }
+
+  window.__recognizeShape = function (pts, scale, pr) {
+    if (!pts || pts.length < 10) return null;
+    const P = pts.map(q => ({ x: q.x, y: q.y }));
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, len = 0;
+    P.forEach((q, i) => { x0 = Math.min(x0, q.x); x1 = Math.max(x1, q.x); y0 = Math.min(y0, q.y); y1 = Math.max(y1, q.y); if (i) len += hyp(q.x - P[i - 1].x, q.y - P[i - 1].y); });
+    const D = hyp(x1 - x0, y1 - y0);
+    if (D * scale < 30) return null;                          // pequeno demais (letra, ponto)
+    const gap = hyp(P[0].x - P[P.length - 1].x, P[0].y - P[P.length - 1].y);
+    if (gap > 0.28 * D) return null;                          // não fechou: não é forma
+    if (len > 4.2 * D) return null;                           // deu voltas demais (rabisco / espiral)
+    const H = hull(P); if (H.length < 3) return null;
+    const hA = area(H); if (hA < 0.04 * D * D) return null;   // fino demais (quase uma linha)
+    const p = pr == null ? 1 : pr;
+    const R = minRect(H), rectFill = hA / R.A;
+    const T = maxTri(H), triFill = T.A / hA;
+    // candidatos e o quão perto o traço passa de cada um (erro médio / tamanho)
+    const cand = [];
+    // triângulo
+    if (T.tri) {
+      const V = T.tri.map(v => ({ x: v[0], y: v[1] }));
+      cand.push({ kind: 'triangle', label: 'Triângulo', err: polyDist(P, V) / D, ok: triFill > 0.78, V });
+    }
+    // retângulo / quadrado
+    {
+      let ang = snapAng(Math.atan2(R.uy, R.ux));
+      const ux = Math.cos(ang), uy = Math.sin(ang);
+      // recalcula as medidas no ângulo (possivelmente alinhado)
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const q of P) { const a = q.x * ux + q.y * uy, b = -q.x * uy + q.y * ux; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+      // o traço à mão passa um pouco por dentro e por fora: usa a média entre o envoltório e o miolo
+      const sh = 0.02 * Math.min(a1 - a0, b1 - b0);
+      a0 += sh; a1 -= sh; b0 += sh; b1 -= sh;
+      let w = a1 - a0, h = b1 - b0;
+      const sq = Math.min(w, h) / Math.max(w, h) > 0.9;
+      const ca = (a0 + a1) / 2, cb = (b0 + b1) / 2;
+      if (sq) { const m = (w + h) / 2; w = h = m; }
+      const pt = (a, b) => ({ x: a * ux - b * uy, y: a * uy + b * ux });
+      const V = [pt(ca - w / 2, cb - h / 2), pt(ca + w / 2, cb - h / 2), pt(ca + w / 2, cb + h / 2), pt(ca - w / 2, cb + h / 2)];
+      cand.push({ kind: sq ? 'square' : 'rect', label: sq ? 'Quadrado' : 'Retângulo', err: polyDist(P, V) / D, ok: rectFill > 0.84, V });
+    }
+    // elipse / círculo (eixos pela distribuição dos pontos)
+    {
+      let cx = 0, cy = 0; H.forEach(v => { cx += v[0]; cy += v[1]; });
+      let mx = 0, my = 0; P.forEach(q => { mx += q.x; my += q.y; }); mx /= P.length; my /= P.length;
+      let sxx = 0, syy = 0, sxy = 0; P.forEach(q => { const dx = q.x - mx, dy = q.y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+      const ang0 = 0.5 * Math.atan2(2 * sxy, sxx - syy), ang = snapAng(ang0), c = Math.cos(ang), s = Math.sin(ang);
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const q of P) { const a = (q.x - mx) * c + (q.y - my) * s, b = -(q.x - mx) * s + (q.y - my) * c; a0 = Math.min(a0, a); a1 = Math.max(a1, a); b0 = Math.min(b0, b); b1 = Math.max(b1, b); }
+      let ra = (a1 - a0) / 2 * 0.97, rb = (b1 - b0) / 2 * 0.97;
+      const ecx = mx + ((a0 + a1) / 2) * c - ((b0 + b1) / 2) * s, ecy = my + ((a0 + a1) / 2) * s + ((b0 + b1) / 2) * c;
+      const circ = Math.min(ra, rb) / Math.max(ra, rb) > 0.86;
+      if (circ) { ra = rb = (ra + rb) / 2; }
+      let e = 0; P.forEach(q => { const dx = q.x - ecx, dy = q.y - ecy, a = dx * c + dy * s, b = -dx * s + dy * c; e += Math.abs(Math.hypot(a / ra, b / rb) - 1) * Math.min(ra, rb); });
+      cand.push({ kind: circ ? 'circle' : 'ellipse', label: circ ? 'Círculo' : 'Elipse', err: e / P.length / D, ok: rectFill > 0.68 && rectFill < 0.9 && triFill < 0.8, E: [ecx, ecy, ra, rb, ang] });
+    }
+    const good = cand.filter(k => k.ok && k.err < 0.055).sort((a, b) => a.err - b.err);
+    if (!good.length) return null;
+    const best = good[0];
+    const out = best.V ? polyPts(best.V, p) : ellPts(...best.E, p);
+    return { kind: best.kind, label: best.label, pts: out };
+  };
+})();
+
+/* formas reconhecidas: desenha com a geometria EXATA (sem a suavização dos traços à mão, que arredondava os cantos) */
+(function exactShapeRender() {
+  const _c = window.createSvgElementForStrokeOrShape;
+  if (typeof _c !== 'function') return;
+  const f = v => (Math.round(v * 100) / 100).toString();
+  window.createSvgElementForStrokeOrShape = function (s) {
+    const el = _c.apply(this, arguments);
+    if (s && s.kind === 'stroke' && s.geom && el && Array.isArray(s.pts) && s.pts.length > 1) {
+      const sp = [...el.querySelectorAll('path')].find(q => q.getAttribute('fill') === 'none' && q.getAttribute('stroke'));
+      if (sp) {
+        const P = s.pts, a = P[0], z = P[P.length - 1], closed = Math.hypot(a.x - z.x, a.y - z.y) < 0.5;
+        sp.setAttribute('d', 'M ' + P.map(q => f(q.x) + ' ' + f(q.y)).join(' L ') + (closed ? ' Z' : ''));
+        if (s.geom !== 'circle' && s.geom !== 'ellipse') { sp.setAttribute('stroke-linejoin', 'miter'); sp.setAttribute('stroke-miterlimit', '8'); }
+      }
+    }
+    return el;
+  };
+})();
+
 </script>
 <script>
 
@@ -15948,7 +16117,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 10.1 · 03/11/2026 21:29';
+  window.APP_BUILD = 'Tablet 10.3 · 03/11/2026 22:29';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16007,13 +16176,14 @@ async function sdxRunImport() {
   more.innerHTML = `
     <label><input type="checkbox" id="tabFinger"> 👆 Dedo também desenha no modo Caneta</label>
     <label><input type="checkbox" id="tabPenAlways"> ✍️ S Pen sempre escreve (troca para Caneta ao encostar)</label>
+    <label><input type="checkbox" id="tabShapes"> 📐 Desenhar e segurar a S Pen parada transforma em forma perfeita (retângulo, círculo, elipse, triângulo)</label>
     <label><input type="checkbox" id="tabHoldAll"> 📏 Segurar parado no fim do traço deixa reto também nas canetas (no marca-texto já é sempre)</label>
     <label><input type="checkbox" id="tabBtnHover"> 🧽 Botão da S Pen apaga também com a ponta no ar (use se encostando não apagar)</label>
     <button data-act="fit">⊡ Enquadrar o mapa</button>
     <button data-act="full" id="tabFullBtn">⛶ Tela cheia</button>
     <button data-act="recover">🛟 Recuperar último salvamento automático</button>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 10.1 · 03/11/2026 21:29</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 10.3 · 03/11/2026 22:29</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -16022,9 +16192,12 @@ async function sdxRunImport() {
   $('tabFinger').onchange = e => { T.fingerDraws = prefs.fingerDraws = e.target.checked; savePrefs(); };
   $('tabPenAlways').onchange = e => { window.autoPenOnTablet = prefs.penAlwaysWrites = e.target.checked; savePrefs(); };
   window.penStraightFree = !!prefs.straightFree;
-  window.holdStraightAll = !!prefs.holdStraightAll;
+  window.holdStraightAll = prefs.holdAll2 !== false;   // padrão: ligado (como no Samsung Notes)
   $('tabHoldAll').checked = window.holdStraightAll;
-  $('tabHoldAll').onchange = e => { window.holdStraightAll = prefs.holdStraightAll = e.target.checked; savePrefs(); };
+  window.shapeRecog = prefs.shapeRecog !== false;
+  $('tabShapes').checked = window.shapeRecog;
+  $('tabShapes').onchange = e => { window.shapeRecog = prefs.shapeRecog = e.target.checked; savePrefs(); };
+  $('tabHoldAll').onchange = e => { window.holdStraightAll = prefs.holdAll2 = e.target.checked; savePrefs(); };
   // borracha do botão: 'auto' (aprende sozinho se o aparelho avisa o contato) | 'hover' (apaga também no ar)
   T.btnHover = prefs.btnHover === true;
   T.btnContactOK = !!prefs.btnContactOK;
@@ -16100,7 +16273,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 10.1 · 03/11/2026 21:29</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 10.3 · 03/11/2026 22:29</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
