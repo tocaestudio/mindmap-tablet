@@ -536,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.8</title>
+<title>MindMap Studio — Tablet 12.1</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -10030,7 +10030,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.8",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 12.1",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -10074,7 +10074,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.8 · 05/11/2026 07:15';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 12.1 · 05/11/2026 10:57';
  }
  document.body.classList.add('theme-dots');
 
@@ -14111,13 +14111,16 @@ window.runSimulatedPenTabletStroke = function() {
     }
 
     const bb = computePointsBBox(finalPts, Math.max(6, s.size * 1.5));
+    // v11.9: balão embaixo do traço (centro da caixa ou 1º ponto) — decide a junção e a âncora
+    const host0 = findNodeAtWorldPoint(bb.x + bb.w / 2, bb.y + bb.h / 2) || findNodeAtWorldPoint(finalPts[0].x, finalPts[0].y);
     const now = Date.now(), prev = lastStrokeGroup.obj;
     const canMerge = window.penAutoGroupWords && !isClosed && !s.shape && prev && (now - lastStrokeGroup.t < 1800) &&
       window.drawingsList.includes(prev) &&
       prev.scaleX === 1 && prev.scaleY === 1 && !(prev.x || 0) && !(prev.y || 0) && !(prev.rotation || 0) &&
       prev.layer === (window.penLayerTarget || 'fg') &&
       bb.x <= prev.bbox.x + prev.bbox.w + 68 && bb.x + bb.w >= prev.bbox.x - 45 &&
-      bb.y <= prev.bbox.y + prev.bbox.h + 42 && bb.y + bb.h >= prev.bbox.y - 42;
+      bb.y <= prev.bbox.y + prev.bbox.h + 42 && bb.y + bb.h >= prev.bbox.y - 42 &&
+      (prev.attachedNodeId || null) === (host0 ? host0.id : null);   // v11.9: não mistura traço de dentro com o de fora do balão
 
     if (canMerge) {
       undoRec.merge = { id: prev.id, n: prev.items.length, bbox: { ...prev.bbox } };
@@ -16822,7 +16825,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.8 · 05/11/2026 07:15';
+  window.APP_BUILD = 'Tablet 12.1 · 05/11/2026 10:57';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16891,7 +16894,7 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
     <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.8 · 05/11/2026 07:15</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 12.1 · 05/11/2026 10:57</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -17070,7 +17073,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.8 · 05/11/2026 07:15</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 12.1 · 05/11/2026 10:57</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
@@ -17753,7 +17756,10 @@ async function sdxRunImport() {
 
   /* ================= 3) SELEÇÃO: RETÂNGULO / LAÇO · PARCIAL / INTEGRAL ================= */
   window.selShape = prefs.selShape || 'rect';          // 'rect' | 'lasso'
-  window.selInclude = prefs.selInclude || 'partial';   // 'partial' | 'full'
+  // v12.1: sempre começa em PARCIAL (a caixa pega tudo o que tocar). O Integral ficava salvo e "grudava"
+  // sem a pessoa perceber — parecia que a seleção (inclusive com Alt) não funcionava.
+  window.selInclude = 'partial';   // 'partial' | 'full'
+  if (prefs.selInclude) { delete prefs.selInclude; save(); }
   let L = null, lassoEl = null, mbox = null;
   window.__selBegin = (p0, box) => {
     mbox = box;
@@ -17865,7 +17871,7 @@ async function sdxRunImport() {
     });
   }
   const toggleShape = () => { window.selShape = prefs.selShape = window.selShape === 'lasso' ? 'rect' : 'lasso'; save(); syncSelBtns(); say(window.selShape === 'lasso' ? '➰ Seleção em LAÇO: arraste contornando o que quer selecionar.' : '▭ Seleção em RETÂNGULO.'); };
-  const toggleInc = () => { window.selInclude = prefs.selInclude = window.selInclude === 'full' ? 'partial' : 'full'; save(); syncSelBtns(); say(window.selInclude === 'full' ? '● Seleção INTEGRAL: só entra o que ficar inteiro dentro.' : '◐ Seleção PARCIAL: entra tudo o que for tocado.'); };
+  const toggleInc = () => { window.selInclude = window.selInclude === 'full' ? 'partial' : 'full'; syncSelBtns(); say(window.selInclude === 'full' ? '● Seleção INTEGRAL: só entra o que ficar inteiro dentro.' : '◐ Seleção PARCIAL: entra tudo o que for tocado.'); };
   const toggleTarget = () => {
     window.selTarget = window.selTarget === 'links' ? 'nodes' : 'links';
     if (window.selTarget === 'links') { try { if (typeof canvasToolMode !== 'undefined' && canvasToolMode !== 'select') setCanvasToolMode('select'); } catch (_) {} }
@@ -18059,6 +18065,106 @@ try { renderLinks(); } catch (_) {}
     say(`🔗 ${pasted.length} ramo(s) colado(s) em sequência (${total} balões): cada um é filho do anterior. Ctrl+Z desfaz.`);
   };
   try { renderLinks(); } catch (_) {}
+})();
+</script>
+<script>
+/* =====================================================================
+   11.9 — desenhos feitos EM CIMA de um balão ficam PRESOS a ele (arrastar o balão leva o desenho)
+   • traços novos: a junção automática de "palavras" só junta traços do MESMO balão (ou todos fora)
+     — antes, um 1º traço fora do balão fazia os seguintes (dentro) entrarem no grupo solto
+   • desenhos já existentes: ao abrir o mapa, os soltos que estão dentro de um balão passam a ser dele;
+     um grupo meio dentro / meio fora é dividido e só a parte de dentro fica presa
+   ===================================================================== */
+(function v119() {
+  const COVER = 0.8;                                  // ≥ 80% da caixa do traço dentro do balão = "dentro"
+  const rectOf = n => { ensureDims(n); return { l: n.x - n.w / 2, r: n.x + n.w / 2, t: n.y - n.h / 2, b: n.y + n.h / 2 }; };
+  // balão que contém a caixa (x0,y0,x1,y1) — o de cima quando há sobreposição
+  function hostOf(x0, y0, x1, y1) {
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    const n = findNodeAtWorldPoint(cx, cy);
+    if (!n) return null;
+    const R = rectOf(n), area = Math.max(1, (x1 - x0) * (y1 - y0));
+    const ix = Math.max(0, Math.min(x1, R.r) - Math.max(x0, R.l)), iy = Math.max(0, Math.min(y1, R.b) - Math.max(y0, R.t));
+    if ((x1 - x0) < 2 || (y1 - y0) < 2) return (cx >= R.l && cx <= R.r && cy >= R.t && cy <= R.b) ? n : null;   // ponto/linha reta
+    return (ix * iy) / area >= COVER ? n : null;
+  }
+  window.__drawingHostOf = hostOf;
+  const plain = d => !d.rotation && (d.scaleX || 1) === 1 && (d.scaleY || 1) === 1;   // itens = mundo − (x,y)
+
+  function anchorLooseDrawings() {
+    const list = window.drawingsList; if (!Array.isArray(list) || !list.length || !root) return 0;
+    let changed = 0;
+    const out = [];
+    for (const d of list) {
+      if (d.attachedNodeId || d.sdxSlot || d.sdxPage || !Array.isArray(d.items) || !d.items.length) { out.push(d); continue; }
+      const ox = d.x || 0, oy = d.y || 0;
+      if (!plain(d)) {                                // girado/escalado: decide pelo desenho inteiro
+        const w = getDrawingWorldBounds(d), h = w && hostOf(w.x, w.y, w.x + w.w, w.y + w.h);
+        if (h) { d.attachedNodeId = h.id; d.attachedOffset = { dx: ox - h.x, dy: oy - h.y }; changed++; }
+        out.push(d); continue;
+      }
+      const groups = new Map();                       // id do balão (ou '') → itens
+      for (const it of d.items) {
+        const bb = __itemLocalBB(it);
+        const h = bb ? hostOf(bb.x0 + ox, bb.y0 + oy, bb.x1 + ox, bb.y1 + oy) : null;
+        const k = h ? h.id : '';
+        if (!groups.has(k)) groups.set(k, []);
+        groups.get(k).push(it);
+      }
+      if (groups.size === 1) {
+        const k = [...groups.keys()][0];
+        if (k) { const h = nodeMap.get(k); d.attachedNodeId = k; d.attachedOffset = { dx: ox - h.x, dy: oy - h.y }; changed++; }
+        out.push(d); continue;
+      }
+      // grupo dividido: o que está fora continua neste desenho; cada balão ganha o seu pedaço
+      groups.forEach((items, k) => {
+        const part = k ? { ...d, id: uid(), items } : d;
+        if (!k) d.items = items;
+        part.bbox = __itemsBBox(items, d.bbox);
+        if (k) { const h = nodeMap.get(k); part.attachedNodeId = k; part.attachedOffset = { dx: ox - h.x, dy: oy - h.y }; delete part.__ptsCache; }
+        out.push(part);
+      });
+      changed++;
+    }
+    if (changed) {
+      window.drawingsList = out;
+      try { renderDrawings(); } catch (_) {}
+    }
+    return changed;
+  }
+  window.anchorLooseDrawings = anchorLooseDrawings;
+
+  // balão movido por qualquer caminho (🧹 Organizar, ↺ Reorganizar, Alinhar, colar…): os desenhos presos vão junto.
+  // Antes só o ARRASTE reposicionava os desenhos presos; render() deixava-os para trás.
+  if (typeof render === 'function' && typeof syncAttachedDrawingsToNodes === 'function') {
+    const o = render;
+    render = function () { const r = o.apply(this, arguments); try { syncAttachedDrawingsToNodes(); } catch (_) {} return r; };
+  }
+  // mapas abertos depois (JSON / HTML / recuperar): ajusta assim que carregarem
+  if (typeof loadFromJSONObject === 'function') {
+    const o = loadFromJSONObject;
+    loadFromJSONObject = function () {
+      const r = o.apply(this, arguments);
+      try { const n = anchorLooseDrawings(); if (n) console.info('[11.9] desenhos presos aos balões:', n); } catch (e) { console.warn(e); }
+      return r;
+    };
+  }
+  // o mapa que já abriu junto com o arquivo
+  try { anchorLooseDrawings(); } catch (e) { console.warn(e); }
+})();
+</script>
+<script>
+/* =====================================================================
+   12.0 — mapa mais leve ao "mostrar todos"
+   Cada balão tinha "will-change: transform", o que cria uma CAMADA DE COMPOSIÇÃO própria por balão:
+   num mapa grande eram ~870 camadas, todas repintadas a cada passo de zoom (311–334 ms por quadro
+   num mapa de 290 balões + sdocx). Sem isso: 11 camadas, ~121 ms por quadro e ~75 MB a menos.
+   O arraste não precisa dessas camadas: ele já usa uma camada própria e temporária (dragLayerNodes).
+   ===================================================================== */
+(function v120() {
+  const st = document.createElement('style'); st.id = 'v120NoNodeLayers';
+  st.textContent = '.node { will-change: auto; }';
+  document.head.appendChild(st);
 })();
 </script>
 </body>

@@ -117,3 +117,22 @@ NOVO NA 11.8 — CONECTORES NO ZOOM AFASTADO · RECORTAR · COLAR EM SEQUÊNCIA
    filho do destino, o 2º filho do 1º, o 3º filho do 2º… todos em linha. "Colar Ramo à Frente"
    continua colando como irmãos.
  • Copiar/colar agora mantém a cor e a espessura personalizadas dos conectores.
+
+NOVO NA 11.9 — DESENHOS PRESOS AOS BALÕES
+ • Tudo o que você escreve/desenha com a caneta EM CIMA de um balão fica preso a ele:
+   arrastar, organizar ou alinhar o balão leva o desenho junto.
+ • Corrigido: quando o 1º traço de uma palavra era feito fora do balão e os seguintes dentro,
+   os de dentro ficavam "soltos" e não acompanhavam o balão.
+ • Mapas antigos: ao abrir, os desenhos que estão dentro de um balão passam a ser dele
+   (um grupo meio dentro / meio fora é dividido: só a parte de dentro fica presa).
+
+NOVO NA 12.0 — MAPA MAIS LEVE AO "MOSTRAR TODOS"
+ • Zoom e movimento bem mais leves com o mapa inteiro na tela: cada balão deixou de ter uma
+   "camada" gráfica própria (num mapa grande eram ~870). No teste com 290 balões + um caderno
+   do Samsung Notes, cada passo de zoom caiu de ~330 ms para ~120 ms, com menos memória.
+
+NOVO NA 12.1 — SELEÇÃO SEMPRE COMEÇA EM "PARCIAL"
+ • A caixa/laço de seleção pega tudo o que tocar (balões, conectores, desenhos).
+ • O botão "Integral" (só o que fica inteiro dentro) continua disponível, mas não fica mais
+   salvo: ao abrir o app, volta sempre para Parcial. Antes ele "grudava" e parecia que a
+   seleção não funcionava.
