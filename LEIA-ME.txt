@@ -94,3 +94,15 @@ NOVO NA 11.5 — TELA CHEIA NO APP INSTALADO
    aberto (o Android só permite depois de um toque) e volta sozinho se sair — por exemplo
    depois do seletor de arquivos ou do gesto de voltar.
  • Em tela cheia, deslize da borda de baixo para ver a barra do tablet por alguns segundos.
+
+NOVO NA 11.6 — CONECTORES: SELEÇÃO E EDIÇÃO EM GRUPO
+ • Corrigido: depois de tocar/clicar num conector, a ferramenta de seleção (ou o mover tela)
+   ficava "grudada" e saía selecionando tudo em volta ao mexer o mouse.
+ • Tocar num conector agora só o SELECIONA e mostra o botão "⚙ Opções" ao lado; o painel
+   (cor, grossura, tipo, pontas…) abre por esse botão. Toque duplo no conector abre direto.
+ • Vários conectores de uma vez: botão "💬 Balões / 🔗 Conectores" na barra, ao lado de
+   Retângulo/Laço e Parcial/Integral. Em "Conectores", a caixa ou o laço seleciona só
+   conectores, e cada toque num conector junta/tira ele da seleção. No teclado:
+   Ctrl/Shift + clique também junta/tira.
+ • Toda edição no painel vale para TODOS os conectores selecionados (Ctrl+Z desfaz tudo junto).
+ • Só abrir o painel não marca mais o mapa como "alterações não salvas".

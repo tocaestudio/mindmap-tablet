@@ -536,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.5</title>
+<title>MindMap Studio — Tablet 11.6</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -2867,6 +2867,16 @@ body.tab .link-hit { stroke-width: 28px; }
 #svg.mode-draw .link-hit, #svg.mode-eraser .link-hit { pointer-events: none; }
 .link.link-selected, .cross-link-path.link-selected { filter: drop-shadow(0 0 2px #2563eb) drop-shadow(0 0 5px rgba(37,99,235,.65)); }
 .link-hit:hover + .link, .link-hit:hover { }
+/* v11.6: botão flutuante "⚙ Opções" do(s) conector(es) selecionado(s) */
+#linkOptBtn { position: fixed; z-index: 74; display: none; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px;
+  border: 1px solid #1d4ed8 !important; background: #2563eb !important; color: #fff !important; font: 600 13px/1.2 system-ui, sans-serif;
+  box-shadow: 0 6px 18px rgba(37,99,235,.38) !important; cursor: pointer; text-shadow: none !important; white-space: nowrap; }
+#linkOptBtn.show { display: inline-flex; }
+#linkOptBtn:hover { background: #1d4ed8 !important; }
+#linkOptBtn b { background: #fff; color: #1d4ed8; border-radius: 999px; padding: 0 7px; font-size: 11.5px; line-height: 18px; }
+body.tab #linkOptBtn { padding: 10px 16px; font-size: 15px; }
+#linkPanel .lp-h b { white-space: nowrap; }
+#linkPanel .lp-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes mmLinkFlow { to { stroke-dashoffset: -60; } }
 .link.link-flow, .cross-link-path.link-flow { animation: mmLinkFlow 1.4s linear infinite; }
 #linkPanel { position: fixed; z-index: 75; display: none; width: 340px; max-width: calc(100vw - 20px); max-height: calc(100vh - 20px); overflow: auto; padding: 10px 12px;
@@ -2900,7 +2910,7 @@ body.theme-dark #linkPanel .lp-l { color: #cbd5e1; }
 /* botões de forma/inclusão da seleção (desktop) */
 .sel-mode-btn { margin-left: 2px; padding: 4px 8px !important; font-size: 12px !important; }
 .sel-mode-btn.on { background: #dbeafe !important; border-color: #2563eb !important; color: #1d4ed8 !important; }
-#tabDock [data-selshape] .i, #tabDock [data-selinc] .i { font-size: 19px; }
+#tabDock [data-selshape] .i, #tabDock [data-selinc] .i, #tabDock [data-seltarget] .i { font-size: 19px; }
 /* o app pinta todos os botões; aqui as cores ficam explícitas */
 #linkPanel button { color: #0f172a !important; text-shadow: none !important; box-shadow: none; }
 #linkPanel .lp-sw { box-shadow: 0 0 0 1px #cbd5e1 !important; }
@@ -6296,7 +6306,7 @@ function renderCrossLinks() {
     path.setAttribute('marker-end', 'url(#crosslink-arrow)');
     path.setAttribute('d', (window.__linkD && cl.type) ? window.__linkD(cl, x1, y1, x2, y2) : `M${x1} ${y1} Q${midX} ${midY} ${x2} ${y2}`);
     if (window.__styleLink) window.__styleLink(path, cl, 'cross:' + (cl.id || (cl.from + '>' + cl.to)), true);
-    path.onclick = (e) => { e.stopPropagation(); if (window.__openLinkPanel) window.__openLinkPanel({ kind: 'cross', cl }, e); else openEditCrossLinkModal(cl); };
+    path.onclick = (e) => { e.stopPropagation(); if (window.__clickLink) window.__clickLink({ kind: 'cross', cl }, e); else openEditCrossLinkModal(cl); };
     clGroup.appendChild(path);
     if (window.__crossHit) clGroup.appendChild(window.__crossHit(cl, path));
 
@@ -8475,6 +8485,7 @@ svg.addEventListener('pointerdown', e => {
     marqueeBox.setAttribute('height', '0');
     marqueeBox.style.display = 'block';
     if (window.__selBegin) window.__selBegin(startPt, marqueeBox);
+    const linkMq = window.__linkMarquee ? window.__linkMarquee(keepPriorSelection) : null;   // v11.6: seleção de conectores
 
     let movedBox = false;
     canvasMarqueeActive = true;
@@ -8514,7 +8525,7 @@ svg.addEventListener('pointerdown', e => {
       if (!ev) return;
       if (!movedBox && Math.hypot(ev.clientX - startClientX, ev.clientY - startClientY) > 4) movedBox = true;
       if (!movedBox) return;
-      if (!mqNodes) buildMqCache();
+      if (!mqNodes && !linkMq) buildMqCache();
 
       const curPt = worldPoint(ev.clientX, ev.clientY);
       const bx = Math.min(startPt.x, curPt.x);
@@ -8526,6 +8537,7 @@ svg.addEventListener('pointerdown', e => {
       marqueeBox.setAttribute('width', bw);
       marqueeBox.setAttribute('height', bh);
       if (window.__selMove) window.__selMove(curPt);
+      if (linkMq) { linkMq.move(bx, by, bw, bh); return; }
 
       // Seleção em tempo real (Live Marquee)
       const next = new Set(initialSelection);
@@ -8571,6 +8583,7 @@ svg.addEventListener('pointerdown', e => {
       canvasMarqueeActive = false;
       if (marqueeBox) marqueeBox.style.display = 'none';
       if (window.__selEnd) window.__selEnd();
+      if (linkMq && movedBox) { linkMq.end(ev); return; }
 
       if (movedBox) {
         syncSelectionDOM();
@@ -10002,7 +10015,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.5",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.6",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -10046,7 +10059,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.5 · 04/11/2026 18:00';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.6 · 05/11/2026 06:19';
  }
  document.body.classList.add('theme-dots');
 
@@ -12047,6 +12060,7 @@ function setNodeShape(shapeName) {
 // Duplo clique no fundo vazio do canvas cria um Tópico Livre quando em modo Híbrido/Whiteboard (ou filho no MindMap)
 svg.addEventListener('dblclick', e => {
   if (e.target.closest('.node') || e.target.closest('.drawing-item') || dlg.open || canvasToolMode === 'draw') return;
+  if (e.target.closest('.link-hit,.cross-link-path,.cross-link-label-group')) return;   // v11.6: duplo clique no conector = opções
   const pt = worldPoint(e.clientX, e.clientY);
   const newTopic = createFloatingTopicAt(pt.x, pt.y, '<b>Novo Tópico</b>');
   if (newTopic) openEdit(newTopic);
@@ -16793,7 +16807,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.5 · 04/11/2026 18:00';
+  window.APP_BUILD = 'Tablet 11.6 · 05/11/2026 06:19';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16862,7 +16876,7 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
     <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.5 · 04/11/2026 18:00</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 11.6 · 05/11/2026 06:19</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -17041,7 +17055,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.5 · 04/11/2026 18:00</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 11.6 · 05/11/2026 06:19</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
@@ -17390,33 +17404,94 @@ async function sdxRunImport() {
     if (L.opacity != null && L.opacity < 1) path.style.opacity = String(L.opacity);
     path.classList.toggle('link-flow', !!L.flow);
     if (L.flow && dash === 'solid') path.style.strokeDasharray = `${Math.max(8, w * 3)} ${Math.max(6, w * 2)}`;
-    path.classList.toggle('link-selected', window.__selLinkKey === key);
+    path.classList.toggle('link-selected', !!(window.__selLinks && window.__selLinks.has(key)));
     path.dataset.lkey = key;
   };
-  // área de toque larga e invisível sobre cada conector
-  window.__linkHit = function (kind, n, d) {
-    const h = document.createElementNS(NS, 'path');
-    h.id = 'linkhit-' + n.id; h.classList.add('link-hit'); h.setAttribute('d', d);
+  /* v11.6 — clique no conector SELECIONA e mostra o botão "⚙ Opções" (o painel abre por ele).
+     Ctrl/Shift+clique junta/tira conectores; no modo 🔗 Conectores, caixa/laço seleciona conectores
+     e um clique simples já junta/tira. Toda edição do painel vale para TODOS os selecionados.
+     Correção: o clique no conector não bloqueia mais o "soltar" do mouse — antes a caixa de seleção
+     (ou o pan, no modo Mão) ficava grudada no mouse depois do clique. */
+  const SEL = window.__selLinks = new Map();          // chave → alvo { kind:'tree', n } | { kind:'cross', cl }
+  let primary = null, lastClick = null;
+  const keyOf = t => t.kind === 'tree' ? 'tree:' + t.n.id : 'cross:' + (t.cl.id || (t.cl.from + '>' + t.cl.to));
+  const crossArr = () => window.crossLinks || (typeof crossLinks !== 'undefined' ? crossLinks : []);
+  const alive = t => t.kind === 'tree' ? (nodeMap.get(t.n.id) === t.n && !!t.n.parent && !t.n.independent) : crossArr().includes(t.cl);
+  function prune() {
+    SEL.forEach((t, k) => { if (!alive(t)) SEL.delete(k); });
+    if (primary && !SEL.has(keyOf(primary))) primary = null;
+    if (!primary && SEL.size) primary = [...SEL.values()].pop();
+  }
+  const targets = () => { prune(); return [...SEL.values()]; };
+  const paintSel = els => (els || document.querySelectorAll('#links .link, #crosslinks .cross-link-path'))
+    .forEach(p => p.classList.toggle('link-selected', SEL.has(p.dataset.lkey)));
+  window.__paintLinkSel = () => paintSel();
+  const tapTol = e => (e && e.pointerType === 'mouse') ? 4 : 12;   // 4px = mesmo limite em que a caixa de seleção começa
+  const hitTarget = h => h.__cl ? { kind: 'cross', cl: h.__cl } : (h.__n ? { kind: 'tree', n: h.__n } : null);
+
+  function wireHit(h) {
     h.addEventListener('pointerdown', e => {
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       h.__down = { x: e.clientX, y: e.clientY };                  // sem bloquear: arrastar a partir daqui ainda faz seleção/pan
     });
     h.addEventListener('pointerup', e => {
       const D = h.__down; h.__down = null;
-      if (!D || Math.hypot(e.clientX - D.x, e.clientY - D.y) > 10) return;
-      e.stopPropagation();
-      openPanel({ kind: 'tree', n }, e);
+      if (!D || Math.hypot(e.clientX - D.x, e.clientY - D.y) > tapTol(e)) return;
+      // SEM stopPropagation: a caixa de seleção / o pan iniciados no pointerdown precisam deste "soltar" para terminar
+      const t = hitTarget(h); if (t) clickLink(t, e);
     });
+  }
+  // área de toque larga e invisível sobre cada conector
+  window.__linkHit = function (kind, n, d) {
+    const h = document.createElementNS(NS, 'path');
+    h.id = 'linkhit-' + n.id; h.classList.add('link-hit'); h.setAttribute('d', d); h.__n = n;
+    wireHit(h);
     return h;
   };
-
   window.__crossHit = function (cl, path) {
     const h = document.createElementNS(NS, 'path');
     h.classList.add('link-hit'); h.setAttribute('d', path.getAttribute('d')); h.__cl = cl;
-    h.addEventListener('pointerdown', e => { if (e.button !== 0 && e.pointerType === 'mouse') return; h.__down = { x: e.clientX, y: e.clientY }; });
-    h.addEventListener('pointerup', e => { const D = h.__down; h.__down = null; if (!D || Math.hypot(e.clientX - D.x, e.clientY - D.y) > 10) return; e.stopPropagation(); openPanel({ kind: 'cross', cl }, e); });
+    wireHit(h);
     return h;
   };
+
+  // ---------- botão flutuante ⚙ Opções ----------
+  const ob = document.createElement('button'); ob.type = 'button'; ob.id = 'linkOptBtn';
+  ob.title = 'Opções do conector: cor, grossura, tipo, pontas…';
+  document.body.appendChild(ob);
+  let obAt = null;
+  function showBtn(x, y) {
+    if (x == null) { x = innerWidth / 2; y = innerHeight / 2; }
+    obAt = { x, y };
+    ob.innerHTML = '⚙️ Opções' + (SEL.size > 1 ? ' <b>' + SEL.size + '</b>' : '');
+    ob.style.visibility = 'hidden'; ob.classList.add('show');
+    const W = ob.offsetWidth, H = ob.offsetHeight;
+    const fit = (bx, by) => ({ bx: Math.max(8, Math.min(bx, innerWidth - W - 8)), by: Math.max(8, Math.min(by, innerHeight - H - 8)) });
+    // posições em volta do ponto, em ordem de preferência: fica na 1ª que não cobre balão nem desenho
+    // (se todas cobrem algo — balões muito juntos —, na que cobre menos)
+    const C = [fit(x + 14, y - H - 12), fit(x - W - 14, y - H - 12), fit(x + 14, y + 16), fit(x - W - 14, y + 16),
+               fit(x + 18, y - H / 2), fit(x - W - 18, y - H / 2), fit(x - W / 2, y - H - 44), fit(x - W / 2, y + 44)];
+    const G = [0, 0.5, 1];
+    const score = c => {
+      let n = 0;
+      for (const gx of G) for (const gy of G) {
+        const t = document.elementFromPoint(c.bx + 2 + (W - 4) * gx, c.by + 2 + (H - 4) * gy);
+        if (t && t.closest && t.closest('.node,.drawing-item,#linkPanel,.cross-link-label-group,#tabDock,#toolbar')) n++;
+      }
+      return n;
+    };
+    let c = null, best = 1e9;
+    for (const k of C) { const s = score(k); if (s < best) { best = s; c = k; } if (!s) break; }
+    ob.style.left = c.bx + 'px'; ob.style.top = c.by + 'px';
+    ob.style.visibility = '';
+  }
+  const hideBtn = () => ob.classList.remove('show');
+  ob.addEventListener('pointerdown', e => e.stopPropagation());
+  ob.addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    const r = ob.getBoundingClientRect();
+    openPanel({ x: r.left, y: r.top + r.height / 2 });
+  });
 
   // ---------- painel do conector ----------
   const pan = document.createElement('div'); pan.id = 'linkPanel';
@@ -17432,21 +17507,24 @@ async function sdxRunImport() {
     <div class="lp-f"><button type="button" data-apply="branch" title="Copia este estilo para todos os conectores abaixo deste ramo">Aplicar ao ramo</button><button type="button" data-apply="all" title="Copia este estilo para todos os conectores do mapa">Aplicar a todos</button><button type="button" data-reset>↺ Padrão</button><button type="button" data-label>✏️ Rótulo…</button></div>`;
   document.body.appendChild(pan);
   const q = s => pan.querySelector(s), qa = s => pan.querySelectorAll(s);
-  let T = null, dirty = false;
-  const getL = () => T.kind === 'tree' ? (T.n.link || (T.n.link = {})) : T.cl;
-  const keyOf = t => t.kind === 'tree' ? 'tree:' + t.n.id : 'cross:' + (t.cl.id || (t.cl.from + '>' + t.cl.to));
+  let dirty = false;
+  const getL = t => t.kind === 'tree' ? (t.n.link || (t.n.link = {})) : t.cl;
+  const isOpen = () => pan.classList.contains('open');
   function firstChange() {
     if (dirty) return; dirty = true;
     try { saveState(); } catch (_) {}
   }
+  // só para EDIÇÕES (selecionar/abrir/fechar não marca o mapa como alterado)
   function redraw() {
     try { renderLinks(); } catch (_) {}
     try { markUnsavedChanges(true); } catch (_) {}
     try { scheduleLocalAutoBackup(); } catch (_) {}
   }
   function fill() {
-    const L = getL(), cross = T.kind === 'cross';
-    q('.lp-sub').textContent = cross ? 'conexão cruzada' : 'ligação do ramo';
+    prune(); const t = primary; if (!t) return;
+    const L = getL(t), cross = t.kind === 'cross', many = SEL.size > 1;
+    q('.lp-h b').textContent = many ? '🔗 ' + SEL.size + ' conectores' : '🔗 Conector';
+    q('.lp-sub').textContent = many ? 'a edição vale para todos' : (cross ? 'conexão cruzada' : 'ligação do ramo');
     qa('[data-color]').forEach(b => b.classList.toggle('on', (b.dataset.color || '') === (L.color || '')));
     q('[data-color-pick]').value = /^#[0-9a-f]{6}$/i.test(L.color || '') ? L.color : '#64748b';
     const w = L.width || (cross ? 2.5 : 3); q('[data-width]').value = w; q('[data-wout]').textContent = String(w).replace('.', ',') + 'px';
@@ -17458,58 +17536,197 @@ async function sdxRunImport() {
     qa('[data-start]').forEach(b => b.classList.toggle('on', b.dataset.start === (L.start || 'none')));
     qa('[data-end]').forEach(b => b.classList.toggle('on', b.dataset.end === (L.end || (cross ? 'arrow' : 'none'))));
     const op = L.opacity != null ? L.opacity : 1; q('[data-op]').value = op; q('[data-oout]').textContent = Math.round(op * 100) + '%';
-    q('[data-label]').style.display = cross ? '' : 'none';
-    q('[data-apply="branch"]').style.display = cross ? 'none' : '';
+    q('[data-label]').style.display = cross && !many ? '' : 'none';
+    q('[data-apply="branch"]').style.display = !cross && !many ? '' : 'none';
   }
-  function openPanel(target, ev) {
-    T = target; dirty = false;
-    window.__selLinkKey = keyOf(target);
+  function openPanel(at) {
+    prune(); if (!SEL.size) return;
+    dirty = false;
     try { hideContextMenu(); closeAllToolbarPopovers(); } catch (_) {}
-    redraw(); fill();
+    hideBtn();
+    fill();
     pan.classList.add('open');
     const W = pan.offsetWidth, H = pan.offsetHeight;
-    let x = (ev && ev.clientX || innerWidth / 2) + 16, y = (ev && ev.clientY || innerHeight / 2) - 40;
-    if (x + W > innerWidth - 10) x = Math.max(10, (ev ? ev.clientX : innerWidth) - W - 16);
+    const ax = at ? at.x : innerWidth / 2, ay = at ? at.y : innerHeight / 2;
+    let x = ax + 16, y = ay - 40;
+    if (x + W > innerWidth - 10) x = Math.max(10, ax - W - 16);
     y = Math.max(10, Math.min(y, innerHeight - H - 10));
     pan.style.left = x + 'px'; pan.style.top = y + 'px';
-    say('🔗 Conector selecionado: escolha cor, grossura, tipo e pontas. Toque fora para fechar.');
+    say(SEL.size > 1 ? '🔗 Editando ' + SEL.size + ' conectores de uma vez: cor, grossura, tipo e pontas valem para todos.'
+                     : '🔗 Conector: escolha cor, grossura, tipo e pontas. Toque fora para fechar.');
   }
-  window.__openLinkPanel = openPanel;
-  // toque (tablet) num conector: abre o painel — chamado pelo controle de gestos do tablet
+  function clearSel() {
+    const had = SEL.size || isOpen() || ob.classList.contains('show');
+    SEL.clear(); primary = null; hideBtn(); pan.classList.remove('open');
+    if (had) paintSel();
+  }
+  // clique/toque num conector
+  function clickLink(t, ev) {
+    const k = keyOf(t), now = performance.now(), ty = ev ? ev.type : '';
+    // o MESMO toque pode chegar por 2 caminhos (pointerup do traço de toque + click do traço visível / gestos do tablet):
+    // ignora só se for o mesmo evento, ou outro TIPO de evento logo em seguida (cliques rápidos de verdade continuam valendo)
+    if (lastClick && lastClick.k === k && (lastClick.ev === ev || (lastClick.ty !== ty && now - lastClick.t < 400))) return true;
+    lastClick = { k, t: now, ev, ty };
+    prune();
+    const add = !!(ev && (ev.ctrlKey || ev.shiftKey || ev.metaKey)) || window.selTarget === 'links';
+    if (add) {
+      if (SEL.has(k)) { SEL.delete(k); if (primary && keyOf(primary) === k) primary = null; }
+      else { SEL.set(k, t); primary = t; }
+      prune();
+    } else { SEL.clear(); SEL.set(k, t); primary = t; }
+    paintSel();
+    const x = ev && ev.clientX, y = ev && ev.clientY;
+    if (!SEL.size) { clearSel(); setTimeout(() => say('🔗 Nenhum conector selecionado.'), 0); return true; }
+    if (isOpen()) fill(); else showBtn(x, y);
+    const msg = SEL.size > 1
+      ? '🔗 ' + SEL.size + ' conectores selecionados — clique em ⚙️ Opções para editar todos de uma vez.'
+      : '🔗 Conector selecionado — clique em ⚙️ Opções para editar. ' + (window.selTarget === 'links' ? 'Toque em outros para juntar.'
+        : $('tabDock') ? 'Para vários, toque em 💬 Balões na barra (vira 🔗 Conectores).' : 'Ctrl/Shift+clique junta mais conectores.');
+    setTimeout(() => say(msg), 0);                                   // depois do "Seleção limpa." da caixa/pan
+    return true;
+  }
+  window.__clickLink = clickLink;
+  // compatibilidade: abre o painel direto para 1 conector
+  window.__openLinkPanel = (target, ev) => {
+    SEL.clear(); SEL.set(keyOf(target), target); primary = target; paintSel();
+    openPanel(ev ? { x: ev.clientX, y: ev.clientY } : null);
+  };
+  // toque (tablet) num conector — chamado pelo controle de gestos do tablet
   window.__tapLink = (t, ev) => {
     const h = t && t.closest && t.closest('.link-hit'); if (!h) return false;
-    if (h.id && h.id.startsWith('linkhit-')) { const n = nodeMap.get(h.id.slice(8)); if (n) { openPanel({ kind: 'tree', n }, ev); return true; } }
-    if (h.__cl) { openPanel({ kind: 'cross', cl: h.__cl }, ev); return true; }
-    return false;
+    const tg = hitTarget(h); if (!tg) return false;
+    return clickLink(tg, ev);
   };
-  function closePanel() { if (!pan.classList.contains('open')) return; pan.classList.remove('open'); window.__selLinkKey = null; T = null; try { renderLinks(); } catch (_) {} }
+  // duplo clique num conector: abre as opções direto
+  document.addEventListener('dblclick', e => {
+    const h = e.target && e.target.closest && e.target.closest('.link-hit'); if (!h) return;
+    const tg = hitTarget(h); if (!tg) return;
+    if (!SEL.has(keyOf(tg))) {                                       // no modo Conectores mantém os outros selecionados
+      if (window.selTarget !== 'links' && !(e.ctrlKey || e.shiftKey || e.metaKey)) SEL.clear();
+      SEL.set(keyOf(tg), tg); primary = tg; paintSel();
+    }
+    openPanel({ x: e.clientX, y: e.clientY });
+  });
+  function closePanel() { clearSel(); }
   window.__closeLinkPanel = closePanel;
-  (window.__outsideClose = window.__outsideClose || []).push(t => { if (!t.closest('#linkPanel') && !t.closest('.link-hit') && !t.closest('.cross-link-path')) closePanel(); });
-  window.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
-  const set = (k, v) => { if (!T) return; firstChange(); const L = getL(); if (v === '' || v == null) delete L[k]; else L[k] = v; redraw(); fill(); };
+  window.__clearLinkSel = clearSel;
+  (window.__outsideClose = window.__outsideClose || []).push((t, e) => {
+    if (t.closest('#linkPanel') || t.closest('#linkOptBtn') || t.closest('.link-hit') || t.closest('.cross-link-path')) return;
+    const sv = $('svg');
+    // Shift/Ctrl/Alt no mapa = somar à seleção (caixa/laço) → mantém os conectores já escolhidos
+    if (e && (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) && sv && sv.contains(t)) { pan.classList.remove('open'); hideBtn(); return; }
+    clearSel();
+  });
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') clearSel(); });
+  { const sv = $('svg'); if (sv) sv.addEventListener('wheel', hideBtn, { passive: true }); }   // zoom: o botão sairia do lugar
+
+  // pontos do conector calculados direto do "d" (o app só gera M/L/C/Q absolutos). getPointAtLength do navegador
+  // custava ~1,6 ms por conector — 1 s de travada no início da caixa num mapa com 600 conectores
+  function samplePath(d) {
+    if (!d || /[^MLCQ0-9eE.,\s+-]/.test(d)) return null;              // formato inesperado → método do navegador
+    const tok = d.match(/[MLCQ]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+    const P = []; let i = 0, cx = 0, cy = 0, cmd = '';
+    const num = () => Number(tok[i++]);
+    const steps = len => Math.max(1, Math.min(40, Math.ceil(len / 30)));
+    while (i < tok.length) {
+      if (/^[MLCQ]$/.test(tok[i])) cmd = tok[i++];
+      if (cmd === 'M') { cx = num(); cy = num(); P.push({ x: cx, y: cy }); cmd = 'L'; }
+      else if (cmd === 'L') {
+        const x = num(), y = num(), n = steps(Math.hypot(x - cx, y - cy));
+        for (let k = 1; k <= n; k++) P.push({ x: cx + (x - cx) * k / n, y: cy + (y - cy) * k / n });
+        cx = x; cy = y;
+      } else if (cmd === 'C' || cmd === 'Q') {
+        const c = cmd === 'C', x1 = num(), y1 = num(), x2 = num(), y2 = num(), x3 = c ? num() : x2, y3 = c ? num() : y2;
+        const n = Math.max(6, steps(Math.hypot(x1 - cx, y1 - cy) + Math.hypot(x2 - x1, y2 - y1) + (c ? Math.hypot(x3 - x2, y3 - y2) : 0)));
+        for (let k = 1; k <= n; k++) {
+          const t = k / n, u = 1 - t;
+          P.push(c ? { x: u * u * u * cx + 3 * u * u * t * x1 + 3 * u * t * t * x2 + t * t * t * x3, y: u * u * u * cy + 3 * u * u * t * y1 + 3 * u * t * t * y2 + t * t * t * y3 }
+                   : { x: u * u * cx + 2 * u * t * x1 + t * t * x2, y: u * u * cy + 2 * u * t * y1 + t * t * y2 });
+        }
+        cx = x3; cy = y3;
+      } else return null;
+    }
+    return P.length >= 2 && P.every(p => isFinite(p.x) && isFinite(p.y)) ? P : null;
+  }
+  function samplePathSlow(h) {
+    let len = 0; try { len = h.getTotalLength(); } catch (_) { return null; }
+    const k = Math.max(6, Math.min(40, Math.ceil(len / 30))), P = [];
+    for (let i = 0; i <= k; i++) { const p = h.getPointAtLength(len * i / k); P.push({ x: p.x, y: p.y }); }
+    return P;
+  }
+  window.__samplePath = samplePath;   // (usado pelos testes)
+
+  // caixa/laço no modo 🔗 Conectores — chamado pelo código da caixa de seleção
+  window.__linkMarquee = keep => {
+    if (window.selTarget !== 'links') return null;
+    // nada muda até o arraste começar de fato: um clique simples NUM conector também passa por aqui
+    // (o pointerdown dele inicia a caixa) e não pode zerar a seleção que o clique vai somar/tirar
+    const init = new Map(keep ? SEL : []);
+    let cache = null, els = null;
+    const build = () => {
+      cache = [];
+      els = document.querySelectorAll('#links .link, #crosslinks .cross-link-path');
+      document.querySelectorAll('#links .link-hit, #crosslinks .link-hit').forEach(h => {
+        const t = hitTarget(h); if (!t) return;
+        const P = samplePath(h.getAttribute('d')) || samplePathSlow(h); if (!P) return;
+        let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+        for (const p of P) { if (p.x < minx) minx = p.x; if (p.x > maxx) maxx = p.x; if (p.y < miny) miny = p.y; if (p.y > maxy) maxy = p.y; }
+        cache.push({ t, key: keyOf(t), P, minx, maxx, miny, maxy });
+      });
+    };
+    return {
+      move(bx, by, bw, bh) {
+        if (!cache) { build(); hideBtn(); pan.classList.remove('open'); }
+        const full = window.selInclude === 'full', lasso = window.selShape === 'lasso';
+        if (lasso && (!L || L.pts.length < 3)) return;
+        const inside = lasso ? (p => inPoly(p.x, p.y, L.pts)) : (p => p.x >= bx && p.x <= bx + bw && p.y >= by && p.y <= by + bh);
+        const B = lasso ? { l: L.minx, r: L.maxx, t: L.miny, b: L.maxy } : { l: bx, r: bx + bw, t: by, b: by + bh };
+        SEL.clear(); init.forEach((v, k) => SEL.set(k, v));
+        for (const c of cache) {
+          if (c.maxx < B.l || c.minx > B.r || c.maxy < B.t || c.miny > B.b) continue;
+          if (full ? c.P.every(inside) : c.P.some(inside)) SEL.set(c.key, c.t);
+        }
+        paintSel(els);
+      },
+      end(ev) {
+        primary = null; prune(); paintSel();
+        if (SEL.size) {
+          showBtn(ev && ev.clientX, ev && ev.clientY);
+          say('🔗 ' + SEL.size + (SEL.size > 1 ? ' conectores selecionados' : ' conector selecionado') + ' — clique em ⚙️ Opções para editar todos de uma vez.');
+        } else say('Nenhum conector na área selecionada.');
+      }
+    };
+  };
+
+  const set = (k, v) => {
+    const ts = targets(); if (!ts.length) return;
+    firstChange();
+    ts.forEach(t => { const L = getL(t); if (v === '' || v == null) delete L[k]; else L[k] = v; });
+    redraw(); fill();
+  };
   pan.addEventListener('click', e => {
-    const b = e.target.closest('button'); if (!b || !T) return;
+    const b = e.target.closest('button'); if (!b) return;
     if (b.hasAttribute('data-x')) return closePanel();
+    prune(); if (!primary) return;
     if (b.dataset.color !== undefined) return set('color', b.dataset.color);
     if (b.dataset.type) return set('type', b.dataset.type);
     if (b.dataset.dash) return set('dash', b.dataset.dash);
-    if (b.hasAttribute('data-flow')) return set('flow', getL().flow ? '' : true);
+    if (b.hasAttribute('data-flow')) return set('flow', getL(primary).flow ? '' : true);
     if (b.dataset.start) return set('start', b.dataset.start === 'none' ? '' : b.dataset.start);
     if (b.dataset.end) return set('end', b.dataset.end);
-    if (b.dataset.w) { const L = getL(); const w = Math.max(1, Math.min(14, (L.width || (T.kind === 'cross' ? 2.5 : 3)) + Number(b.dataset.w) * 0.5)); return set('width', w); }
+    if (b.dataset.w) { const L = getL(primary); const w = Math.max(1, Math.min(14, (L.width || (primary.kind === 'cross' ? 2.5 : 3)) + Number(b.dataset.w) * 0.5)); return set('width', w); }
     if (b.hasAttribute('data-reset')) {
       firstChange();
-      if (T.kind === 'tree') T.n.link = null; else ['color', 'width', 'type', 'dash', 'flow', 'start', 'end', 'opacity'].forEach(k => delete T.cl[k]);
-      if (T.kind === 'tree') T.n.link = {};
+      targets().forEach(t => { if (t.kind === 'tree') t.n.link = {}; else ['color', 'width', 'type', 'dash', 'flow', 'start', 'end', 'opacity'].forEach(k => delete t.cl[k]); });
       redraw(); fill(); return;
     }
-    if (b.hasAttribute('data-label') && T.kind === 'cross') { const cl = T.cl; closePanel(); try { openEditCrossLinkModal(cl); } catch (_) {} return; }
+    if (b.hasAttribute('data-label') && primary.kind === 'cross' && SEL.size === 1) { const cl = primary.cl; closePanel(); try { openEditCrossLinkModal(cl); } catch (_) {} return; }
     if (b.dataset.apply) {
       firstChange();
-      const L = { ...getL() };
+      const L = { ...getL(primary) };
       const apply = n => { if (n.parent && !n.independent) n.link = { ...L }; };
-      if (b.dataset.apply === 'branch' && T.kind === 'tree') { const walk = n => { (n.children || []).forEach(c => { apply(c); walk(c); }); }; walk(T.n); }
-      else { nodeMap.forEach(apply); (window.crossLinks || (typeof crossLinks !== 'undefined' ? crossLinks : [])).forEach(cl => Object.assign(cl, L)); }
+      if (b.dataset.apply === 'branch' && primary.kind === 'tree' && SEL.size === 1) { const walk = n => { (n.children || []).forEach(c => { apply(c); walk(c); }); }; walk(primary.n); }
+      else { nodeMap.forEach(apply); crossArr().forEach(cl => Object.assign(cl, L)); }
       redraw(); fill();
       say(b.dataset.apply === 'branch' ? '🔗 Estilo aplicado aos conectores deste ramo.' : '🔗 Estilo aplicado a todos os conectores.');
     }
@@ -17607,7 +17824,16 @@ async function sdxRunImport() {
 
   // ---------- botões de modo de seleção ----------
   const icoRect = '▭', icoLasso = '➰';
+  window.selTarget = 'nodes';                            // 'nodes' | 'links' — sempre começa em Balões
   function syncSelBtns() {
+    document.querySelectorAll('[data-seltarget]').forEach(b => {
+      const l = window.selTarget === 'links';
+      b.classList.toggle('on', l);
+      b.querySelector('.t') && (b.querySelector('.t').textContent = l ? 'Conectores' : 'Balões');
+      b.querySelector('.i') && (b.querySelector('.i').textContent = l ? '🔗' : '💬');
+      b.title = l ? 'Selecionando CONECTORES: caixa/laço pega só conectores e cada clique junta/tira um conector — toque para voltar a Balões'
+                  : 'Selecionando BALÕES — toque para selecionar CONECTORES (vários de uma vez)';
+    });
     document.querySelectorAll('[data-selshape]').forEach(b => {
       const l = window.selShape === 'lasso';
       b.classList.toggle('on', l);
@@ -17625,7 +17851,13 @@ async function sdxRunImport() {
   }
   const toggleShape = () => { window.selShape = prefs.selShape = window.selShape === 'lasso' ? 'rect' : 'lasso'; save(); syncSelBtns(); say(window.selShape === 'lasso' ? '➰ Seleção em LAÇO: arraste contornando o que quer selecionar.' : '▭ Seleção em RETÂNGULO.'); };
   const toggleInc = () => { window.selInclude = prefs.selInclude = window.selInclude === 'full' ? 'partial' : 'full'; save(); syncSelBtns(); say(window.selInclude === 'full' ? '● Seleção INTEGRAL: só entra o que ficar inteiro dentro.' : '◐ Seleção PARCIAL: entra tudo o que for tocado.'); };
-  window.toggleSelShape = toggleShape; window.toggleSelInclude = toggleInc;
+  const toggleTarget = () => {
+    window.selTarget = window.selTarget === 'links' ? 'nodes' : 'links';
+    if (window.selTarget === 'links') { try { if (typeof canvasToolMode !== 'undefined' && canvasToolMode !== 'select') setCanvasToolMode('select'); } catch (_) {} }
+    syncSelBtns();
+    say(window.selTarget === 'links' ? '🔗 Selecionar CONECTORES: arraste a caixa/laço sobre eles ou clique em cada um para juntar. Depois, ⚙️ Opções.' : '💬 Selecionar BALÕES.');
+  };
+  window.toggleSelShape = toggleShape; window.toggleSelInclude = toggleInc; window.toggleSelTarget = toggleTarget;
   const mkBtn = (attr, fn, tablet) => {
     const b = document.createElement('button'); b.type = 'button'; b.setAttribute(attr, '');
     b.innerHTML = tablet ? '<span class="i"></span><small class="t"></small>' : '<span class="i"></span> <span class="t"></span>';
@@ -17636,11 +17868,11 @@ async function sdxRunImport() {
   const dock = $('tabDock');
   if (dock) {                                                    // tablet: na barra de baixo, logo depois de "Seleção"
     const selB = dock.querySelector('[data-mode="select"]');
-    const b1 = mkBtn('data-selshape', toggleShape, true), b2 = mkBtn('data-selinc', toggleInc, true);
-    selB.after(b1); b1.after(b2);
+    const b1 = mkBtn('data-selshape', toggleShape, true), b2 = mkBtn('data-selinc', toggleInc, true), b3 = mkBtn('data-seltarget', toggleTarget, true);
+    selB.after(b1); b1.after(b2); b2.after(b3);
   } else {                                                       // desktop: ao lado de "Selecionar"
     const sb = $('btnModeSelect');
-    if (sb) { const b1 = mkBtn('data-selshape', toggleShape), b2 = mkBtn('data-selinc', toggleInc); sb.after(b1); b1.after(b2); }
+    if (sb) { const b1 = mkBtn('data-selshape', toggleShape), b2 = mkBtn('data-selinc', toggleInc), b3 = mkBtn('data-seltarget', toggleTarget); sb.after(b1); b1.after(b2); b2.after(b3); }
   }
   syncSelBtns();
   // atalhos no desktop: Shift+L troca retângulo/laço · Shift+I troca parcial/integral
