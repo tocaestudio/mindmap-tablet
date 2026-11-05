@@ -536,7 +536,7 @@
 })();
 
 </script>
-<title>MindMap Studio — Tablet 11.6</title>
+<title>MindMap Studio — Tablet 11.8</title>
 <script>
 /**
  * marked v12.0.2 - a markdown parser
@@ -5898,7 +5898,15 @@ window.addEventListener('keydown', e => {
       } else {
         copySelectedBranches();
       }
+    } else if (k === 'x' && !e.shiftKey && !e.altKey && (selectedNodes.size > 0 || selected)) {
+      e.preventDefault();
+      cutSelectedBranches();
     } else if (k === 'v') {
+      if (e.altKey && !e.shiftKey) {          // Ctrl+Alt+V: colar em sequência (um filho do outro)
+        e.preventDefault();
+        pasteBranchesAsChain();
+        return;
+      }
       if (e.shiftKey) {
         e.preventDefault();
         pasteNodeFormatting();
@@ -9215,8 +9223,15 @@ function openCustomContextMenu(clientX, clientY, targetNode) {
       <button type="button" class="ctx-item" onclick="hideContextMenu(); copySelectedBranches();">
         <span>📋 Copiar Ramo e Sub-ramos</span><span class="ctx-kbd">Ctrl+C</span>
       </button>
+      ${(targetNode.parent || selectedNodes.size > 1) ? `
+      <button type="button" class="ctx-item" onclick="hideContextMenu(); cutSelectedBranches();" title="Tira do mapa e guarda na memória, na ordem em que foram selecionados (Ctrl+Z desfaz)">
+        <span>✂️ Recortar ${selectedNodes.size > 1 ? selectedNodes.size + ' Ramos' : 'Ramo'}</span><span class="ctx-kbd">Ctrl+X</span>
+      </button>` : ''}
       <button type="button" class="ctx-item" onclick="hideContextMenu(); pasteBranchesToSelected();" ${canPasteBranch ? '' : 'disabled'}>
         <span>📥 Colar Ramo à Frente</span><span class="ctx-kbd">Ctrl+V</span>
+      </button>
+      <button type="button" class="ctx-item" onclick="hideContextMenu(); pasteBranchesAsChain();" ${canPasteBranch ? '' : 'disabled'} title="O 1º vira filho deste balão, o 2º filho do 1º, o 3º filho do 2º… (na ordem em que foram selecionados)">
+        <span>🔗 Colar em Sequência${canPasteBranch && copiedBranchesClipboard.length > 1 ? ' (' + copiedBranchesClipboard.length + ', um filho do outro)' : ' (um filho do outro)'}</span><span class="ctx-kbd">Ctrl+Alt+V</span>
       </button>
       ${targetNode.parent ? `
       <button type="button" class="ctx-item" onclick="hideContextMenu(); duplicateSelectedBranch();">
@@ -10015,7 +10030,7 @@ function init(){
  } else {
    // Cria um mapa inicial interativo demonstrando os recursos do MindMap Studio Pro v5.0
    root = treeFromJSON({
-     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.6",
+     content: "🧠 <b>MindMap Studio</b><br>Tablet 11.8",
      bg: "#dbeafe",
      border: "#2563eb",
      borderWidth: 3,
@@ -10059,7 +10074,7 @@ function init(){
    });
    parents(root);
    autoLayout();
-   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.6 · 05/11/2026 06:19';
+   status.textContent='✨ Bem-vindo ao MindMap Studio — Tablet 11.8 · 05/11/2026 07:15';
  }
  document.body.classList.add('theme-dots');
 
@@ -16807,7 +16822,7 @@ async function sdxRunImport() {
   const T = window.__tab;
   const $ = id => document.getElementById(id);
   document.body.classList.add('tab');
-  window.APP_BUILD = 'Tablet 11.6 · 05/11/2026 06:19';
+  window.APP_BUILD = 'Tablet 11.8 · 05/11/2026 07:15';
   // suavização menor no tablet: a tinta acompanha a ponta da S Pen (o controle deslizante continua funcionando)
   try { if (typeof setPenSmoothing === 'function') setPenSmoothing(30); else window.penSmoothing = 30; } catch (_) { window.penSmoothing = 30; }
   try { document.title = 'MindMap Studio — ' + window.APP_BUILD.split(' · ')[0]; } catch (_) {}
@@ -16876,7 +16891,7 @@ async function sdxRunImport() {
     <label><input type="checkbox" id="tabMeter"> 📊 Medidor da caneta (mostra, a cada traço, quantos pontos chegam e quanto a pintura atrasa)</label>
     <label><input type="checkbox" id="tabLiveOld"> 🐢 Rascunho no modo antigo (repinta o traço inteiro a cada quadro, como na v11.1 — só para comparar)</label>
     <button data-act="diag">🔬 Diagnóstico da S Pen (mostra o que o tablet envia)</button>
-    <div class="tm-ver">Versão: <b>Tablet 11.6 · 05/11/2026 06:19</b></div>
+    <div class="tm-ver">Versão: <b>Tablet 11.8 · 05/11/2026 07:15</b></div>
     <button data-act="update">🔄 Procurar atualização / forçar atualizar</button>
     <div class="tm-note">Gestos: 1 dedo no fundo move · 2 dedos = zoom · toque longo = menu · toque duplo no balão = editar · segurar o botão da S Pen = borracha · marca-texto: pare a caneta no fim para deixar reto</div>`;
   document.body.appendChild(more);
@@ -17055,7 +17070,7 @@ async function sdxRunImport() {
   diagBox.innerHTML = '<div class="dg-head"><b>🔬 Diagnóstico da S Pen</b><span class="dg-btns">' +
     '<button type="button" data-d="mark">➕ Marcar</button><button type="button" data-d="copy">📋 Copiar</button>' +
     '<button type="button" data-d="clear">🧹 Limpar</button><button type="button" data-d="close">Fechar</button></span></div>' +
-    '<div class="dg-ver">Versão: Tablet 11.6 · 05/11/2026 06:19</div><div class="dg-state"></div><pre></pre>' +
+    '<div class="dg-ver">Versão: Tablet 11.8 · 05/11/2026 07:15</div><div class="dg-state"></div><pre></pre>' +
     '<div class="dg-tip">Faça cada teste devagar e toque em <b>➕ Marcar</b> entre eles:<br>' +
     '<b>A</b> aperte o botão com a caneta no ar, segure 2 s, solte (sem encostar) · ' +
     '<b>B</b> com o botão apertado, encoste e risque, levante, solte o botão · ' +
@@ -17888,6 +17903,163 @@ async function sdxRunImport() {
 // redesenha os conectores agora que as áreas de toque e estilos existem
 try { renderLinks(); } catch (_) {}
 
+</script>
+<script>
+/* =====================================================================
+   11.8 — (1) conectores visíveis em qualquer zoom (espessura mínima na tela)
+          (2) recortar vários ramos (Ctrl+X) · colar EM SEQUÊNCIA (cada um filho do anterior)
+   ===================================================================== */
+(function v118() {
+  /* ---------- 1) espessura mínima dos conectores na tela ----------
+     O traço tem largura em unidades do MAPA (3). No zoom mínimo (2%) isso dava 0,06 px na tela: o conector sumia.
+     Abaixo de ~43% (onde o traço padrão ficaria < 1,3 px na tela) o #svg ganha a classe "zfar" e os conectores
+     passam a ter espessura FIXA NA TELA (vector-effect: non-scaling-stroke). Acima disso, nada muda.
+     Por que assim: mudar a espessura de centenas de traços A CADA passo de zoom forçava o navegador a refazer a
+     geometria do SVG (+60–80 ms por quadro com 400 balões). A classe só troca 1 vez, ao cruzar o limite. */
+  const MIN_PX = 1.3, DEF_W = 3;
+  const FAR = MIN_PX / DEF_W;                       // ≈ 0,43: abaixo disso o traço padrão ficaria mais fino que 1,3 px
+  const FAR_HIT = 12 / 18, FAR_HIT_TAB = 20 / 28;   // área de toque: 18 do mapa (28 no tablet) = 12 px (20 px) de tela
+  const rules = document.createElement('style'); rules.id = 'zoomFarStroke';
+  rules.textContent = `
+    #svg.zfar .link, #svg.zfar .cross-link-path, #svg.zfar .draw-link-path {
+      vector-effect: non-scaling-stroke; stroke-width: var(--lwf, ${MIN_PX}px) !important; }
+    body:not(.tab) #svg.zfarh .link-hit { vector-effect: non-scaling-stroke; stroke-width: 12px; }
+    body.tab #svg.zfarht .link-hit { vector-effect: non-scaling-stroke; stroke-width: 20px; }`;
+  document.head.appendChild(rules);
+  function syncFar() {
+    const sv = document.getElementById('svg'); if (!sv) return;
+    const s = (typeof scale === 'number' && scale > 0) ? scale : 1;
+    const set = (c, on) => { if (sv.classList.contains(c) !== on) sv.classList.toggle(c, on); };   // só mexe no DOM quando cruza o limite
+    set('zfar', s < FAR); set('zfarh', s < FAR_HIT); set('zfarht', s < FAR_HIT_TAB);
+  }
+  window.__syncZoomFar = syncFar;
+  if (typeof apply === 'function') {
+    const o = apply;
+    apply = function () { const r = o.apply(this, arguments); syncFar(); return r; };
+  }
+  syncFar();
+  // largura escolhida no painel: no modo "longe" fica com a espessura que tinha ao cruzar o limite (sem salto)
+  if (typeof window.__styleLink === 'function') {
+    const o = window.__styleLink;
+    window.__styleLink = function (path, L) {
+      const r = o.apply(this, arguments);
+      if (L && L.width) path.style.setProperty('--lwf', Math.max(MIN_PX, L.width * FAR).toFixed(2) + 'px');
+      else path.style.removeProperty('--lwf');
+      return r;
+    };
+  }
+  // exportar SVG/PNG: o arquivo exportado é sempre "de perto" (sem a classe de zoom)
+  if (typeof buildStandaloneSvgString === 'function') {
+    const o = buildStandaloneSvgString;
+    buildStandaloneSvgString = function () {
+      const r = o.apply(this, arguments);
+      if (r && r.svgString) r.svgString = r.svgString.replace(/(<svg[^>]*?class=")([^"]*)"/, (m, a, c) => a + c.replace(/\s*\bzfar(?:h|ht)?\b/g, '') + '"');
+      return r;
+    };
+  }
+
+  /* ---------- 2a) colar copia também o estilo do conector de cada ramo ---------- */
+  if (typeof cloneSubtreeWithNewIds === 'function') {
+    const o = cloneSubtreeWithNewIds;
+    cloneSubtreeWithNewIds = function (ser, parent) {
+      const n = o.apply(this, arguments);
+      const walk = (a, b) => { if (!a || !b) return; if (a.link) b.link = { ...a.link }; (a.children || []).forEach((c, i) => walk(c, b.children[i])); };
+      walk(ser, n);
+      return n;
+    };
+  }
+
+  const say = t => { try { status.textContent = t; } catch (_) {} };
+  const enablePasteBtn = () => { const b = document.getElementById('btnPasteBranchFloat'); if (b) b.disabled = false; };
+
+  /* ---------- 2b) RECORTAR (Ctrl+X): copia na ordem dos cliques e tira do mapa (Ctrl+Z desfaz) ---------- */
+  window.cutSelectedBranches = function () {
+    const tops = getTopLevelSelectedNodes();
+    if (!tops.length) { say('⚠️ Selecione um ou mais balões para recortar (Ctrl+X).'); return; }
+    const cut = tops.filter(n => n.parent);
+    if (!cut.length) { showNotice('O tópico central não pode ser recortado.'); return; }
+    saveState();
+    copiedBranchesClipboard = cut.map(n => serializeNode(n));       // ordem = ordem em que foram selecionados
+    cut.forEach(n => { if (n.parent) n.parent.children = n.parent.children.filter(c => c !== n); });
+    const total = cut.reduce((a, n) => a + all(n).length, 0);
+    selected = null; selectedNodes.clear();
+    try { clearGuideLines(); } catch (_) {}
+    render();
+    try { renderSelection(); updateNodeFloatPanel(); markUnsavedChanges(true); scheduleLocalAutoBackup(); } catch (_) {}
+    enablePasteBtn();
+    say(`✂️ ${cut.length} ramo(s) recortado(s) (${total} balões)${tops.length > cut.length ? ' — o tópico central ficou' : ''}. ` +
+        `Ctrl+V cola como estavam · botão direito → "Colar em Sequência" (ou Ctrl+Alt+V) liga um ao outro.`);
+  };
+
+  /* ---------- 2c) COLAR EM SEQUÊNCIA: 1º vira filho do destino, 2º filho do 1º, 3º filho do 2º… ---------- */
+  function overlaps(c) {
+    const sub = new Set(all(c));
+    const rs = all(c).filter(x => !isNodeHiddenByAncestor(x)).map(nodeRect);
+    const obs = all(root).filter(x => !sub.has(x) && !isNodeHiddenByAncestor(x)).map(nodeRect);
+    const pad = 12;
+    return rs.some(a => obs.some(o => o.r + pad > a.l && o.l - pad < a.r && o.b + pad > a.t && o.t - pad < a.b));
+  }
+  // coloca c ao lado de P, na mesma altura (mesmo sentido em que P saiu do pai dele)
+  function placeBeside(P, c) {
+    const others = (P.children || []).filter(x => x !== c && !x.independent && !isNodeHiddenByAncestor(x));
+    if (others.length) { placeNewBranchFree(P, c); return; }          // P já tem filhos (sub-ramos copiados): entra na coluna deles
+    all(c).forEach(ensureDims); ensureDims(P);
+    const compact = typeof layoutModeName === 'function' && layoutModeName() === 'compact';
+    const vertical = typeof layoutModeName === 'function' && layoutModeName() === 'vertical';
+    const gap = vertical ? LAYOUT.rowGap : (compact ? LAYOUT.colGapCompact : LAYOUT.colGap);
+    if (vertical) {                                                   // organograma: a sequência desce
+      moveSubtree(c, P.x - c.x, (P.y + P.h / 2 + gap + c.h / 2) - c.y);
+    } else {
+      const dir = (P.parent && P.x < P.parent.x - 1) ? -1 : 1;         // ramo do lado esquerdo continua para a esquerda
+      moveSubtree(c, (P.x + dir * (P.w / 2 + gap + c.w / 2)) - c.x, P.y - c.y);
+    }
+    if (!overlaps(c)) return;
+    // ocupado: procura a altura livre mais próxima (acima/abaixo), sem mover nenhum outro balão
+    const baseY = c.y, step = Math.max(24, (c.h || 50) / 2);
+    for (let k = 1; k <= 60; k++) {
+      for (const sgn of [1, -1]) {
+        moveSubtree(c, 0, (baseY + sgn * k * step) - c.y);
+        if (!overlaps(c)) return;
+      }
+    }
+    moveSubtree(c, 0, baseY - c.y);
+    placeNewBranchFree(P, c);
+  }
+  window.pasteBranchesAsChain = function () {
+    const clip = copiedBranchesClipboard;
+    if (!clip || !clip.length) { say('⚠️ Nada na memória. Selecione balões e use Ctrl+C (copiar) ou Ctrl+X (recortar) primeiro.'); return; }
+    const target = selected || (selectedNodes.size ? Array.from(selectedNodes)[0] : root);
+    if (!target) { say('⚠️ Selecione o balão que vai receber a sequência.'); return; }
+    saveState();
+    let prev = target;
+    const pasted = [];
+    clip.forEach(ser => {                                              // ordem da memória = ordem dos cliques
+      const c = cloneSubtreeWithNewIds(ser, prev);
+      c.anchorIn = null; c.anchorOut = null; c.independent = false;
+      all(c).forEach(sn => { const d = dims(sn); sn.w = d.w; sn.h = d.h; });
+      if (!prev.children) prev.children = [];
+      if (prev.collapsed) prev.collapsed = false;
+      prev.children.push(c);
+      // 1º: se o destino já tem filhos, entra na coluna deles; se não, sai ao lado dele, no sentido do ramo
+      // (ramo à esquerda do tópico central continua para a esquerda). Os seguintes: sempre ao lado do anterior.
+      const hasKids = (prev.children || []).some(x => x !== c && !x.independent && !isNodeHiddenByAncestor(x));
+      if (prev === target && hasKids) placeNewBranchFree(target, c, { insertAfter: window.__pasteInsertAfter || null });
+      else placeBeside(prev, c);
+      pasted.push(c);
+      prev = c;
+    });
+    window.__pasteInsertAfter = null;
+    try { clearGuideLines(); } catch (_) {}
+    render();
+    selectedNodes.clear(); pasted.forEach(n => selectedNodes.add(n));
+    selected = pasted[0] || target;
+    renderSelection(); updateNodeFloatPanel();
+    try { markUnsavedChanges(true); scheduleLocalAutoBackup(); } catch (_) {}
+    const total = pasted.length ? all(pasted[0]).length : 0;          // a cadeia é aninhada: o 1º já contém todos
+    say(`🔗 ${pasted.length} ramo(s) colado(s) em sequência (${total} balões): cada um é filho do anterior. Ctrl+Z desfaz.`);
+  };
+  try { renderLinks(); } catch (_) {}
+})();
 </script>
 </body>
 </html>

@@ -106,3 +106,14 @@ NOVO NA 11.6 — CONECTORES: SELEÇÃO E EDIÇÃO EM GRUPO
    Ctrl/Shift + clique também junta/tira.
  • Toda edição no painel vale para TODOS os conectores selecionados (Ctrl+Z desfaz tudo junto).
  • Só abrir o painel não marca mais o mapa como "alterações não salvas".
+
+NOVO NA 11.8 — CONECTORES NO ZOOM AFASTADO · RECORTAR · COLAR EM SEQUÊNCIA
+ • Conectores não somem mais quando o mapa está bem afastado (zoom pequeno): abaixo de ~43%
+   eles ficam com uma espessura mínima na tela, e a área de toque também.
+ • Recortar: selecione os balões (toque no 1º; ligue ⇧ Somar e toque nos outros, na ordem
+   que quiser), toque longo num deles → "✂️ Recortar". Eles saem do mapa e ficam na memória
+   na ORDEM em que foram tocados (↶ desfaz).
+ • Colar em Sequência: toque longo no balão de destino → "🔗 Colar em Sequência". O 1º vira
+   filho do destino, o 2º filho do 1º, o 3º filho do 2º… todos em linha. "Colar Ramo à Frente"
+   continua colando como irmãos.
+ • Copiar/colar agora mantém a cor e a espessura personalizadas dos conectores.
