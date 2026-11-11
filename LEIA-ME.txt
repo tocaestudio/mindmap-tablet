@@ -272,3 +272,11 @@ NOVO NA 12.15.1 — CANETAS RÁPIDAS DE NOVO
    Pincel) que apareceu na 12.15. Uma otimização de arraste feita para o computador deixava o
    tablet reorganizando o mapa inteiro a cada pedaço de traço. No tablet ela foi desligada; o
    arraste e a pinça continuam leves como antes.
+
+NOVO NA 12.15.2 — CANETA SEM TRAVADAS AO ESCREVER
+ • Corrigida a causa das travadas ao escrever com mapa grande: desde a 12.15 o app fazia DOIS salvamentos
+   automáticos. O que veio do computador copiava o mapa inteiro 2,5 s depois de cada traço, sem esperar a
+   caneta parar. No tablet ele foi desligado; continua valendo o salvamento automático do tablet (espera a
+   mão parar, grava compacto e oferece "Recuperar" em ⋯).
+ • A cópia para o Desfazer agora espera a mão parar (0,7 s) em vez de rodar entre uma letra e outra.
+   ↶ continua desfazendo traço por traço, mesmo tocado logo depois de escrever.
