@@ -266,3 +266,9 @@ NOVO NA 12.15 — TABLET EM DIA COM O DESKTOP 12.15
  • Projeto compacto (.mmapz).
  • O arquivo index.html ficou maior (~8,8 MB) porque leva as bibliotecas e a cópia limpa do código
    embutidas — funciona 100% sem internet.
+
+NOVO NA 12.15.1 — CANETAS RÁPIDAS DE NOVO
+ • Corrigida a lentidão de todas as ferramentas de caneta (principalmente Lápis, Caneta Técnica e
+   Pincel) que apareceu na 12.15. Uma otimização de arraste feita para o computador deixava o
+   tablet reorganizando o mapa inteiro a cada pedaço de traço. No tablet ela foi desligada; o
+   arraste e a pinça continuam leves como antes.
