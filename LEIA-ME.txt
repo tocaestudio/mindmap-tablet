@@ -136,3 +136,133 @@ NOVO NA 12.1 — SELEÇÃO SEMPRE COMEÇA EM "PARCIAL"
  • O botão "Integral" (só o que fica inteiro dentro) continua disponível, mas não fica mais
    salvo: ao abrir o app, volta sempre para Parcial. Antes ele "grudava" e parecia que a
    seleção não funcionava.
+
+NOVO NA 12.2 — CONECTORES QUE ACOMPANHAM O LADO DO FILHO
+ • O conector entra no balão filho pelo lado que fica de frente para o pai: filho à direita →
+   entra pela esquerda; à esquerda → pela direita; abaixo → por cima; acima → por baixo.
+   Muda na hora, enquanto você arrasta o filho em volta do pai.
+ • O botão de recolher/expandir (−/+) ficou mais longe da borda e maior: não fica mais em
+   cima das bolinhas das pontas do conector. Os dois mantêm um tamanho confortável na tela
+   ao dar zoom. Toque duplo numa bolinha movida à mão devolve a ponta ao automático.
+
+NOVO NA 12.3 — MAPA GRANDE MUITO MAIS LEVE (TÉCNICA DE GAMES)
+ • No zoom afastado, os traços de cada desenho viram um único caminho e com menos pontos
+   (quanto mais longe, menos detalhe). Alças invisíveis deixaram de ser desenhadas.
+   No teste com um caderno do Samsung Notes: zoom ~5× mais leve.
+
+NOVO NA 12.4 — FLASHCARDS (FRENTE E VERSO)
+ • Toque longo num balão → "Transformar em Flashcard" (ou, no fundo, "Novo Flashcard Aqui").
+ • Para VIRAR: toque na "orelha" ↻ (canto de cima à direita) — funciona também no modo Caneta,
+   com o dedo. O resto do balão continua normal (selecionar, arrastar, toque duplo edita o
+   lado que está à mostra).
+ • O que você escreve com a S Pen fica preso ao LADO: as anotações da frente só aparecem na
+   frente, as do verso só no verso.
+
+NOVO NA 12.5 — JANELA DE EDIÇÃO E OCR (IMAGEM DE TEXTO → TEXTO)
+ • Imagens dentro do editor sempre cabem na largura (antes, páginas de PDF ficavam cortadas
+   e a moldura da imagem "vazava" para fora da janela).
+ • A janela de edição muda de tamanho: arraste a alça no canto de baixo à direita
+   (mínimo 480×380, máximo a tela toda). O app lembra o tamanho; toque duplo na alça volta
+   ao padrão.
+ • OCR: com uma imagem de texto (foto, página escaneada, print) você pode transformar tudo em
+   texto editável — a imagem original é apagada:
+     - no editor: selecione a imagem → "🔤 Texto", ou "🔤 Imagens → texto" para todas;
+     - no mapa: toque longo no balão → "🔤 Transformar Imagens em Texto (OCR)" (↶ desfaz).
+   Na PRIMEIRA vez o leitor de português (~5 MB) é baixado da internet e fica guardado no
+   tablet; depois funciona sem internet.
+
+NOVO NA 12.6 — OCR RECONHECE O "§"
+ • O leitor de português trocava "§" por "$", "8" ou "S" (e "§§" por "$$", "88", "55"…).
+   Agora o app corrige pelo contexto jurídico ("§ 1º", "§ 10.", "§§ 4º e 5º", "§ único"),
+   sem mexer em "R$ 10,00", "art. 8º", "Lei nº 8.666" e outros números.
+
+NOVO NA 12.7 — EDITOR DO BALÃO: O QUE VOCÊ VÊ É O QUE FICA
+ • A caixa de edição agora É o balão: mesma largura, cor, borda, fonte e espaçamentos. As linhas
+   quebram exatamente onde vão quebrar no mapa, e a altura mostrada é a altura real do balão.
+   O editor abre em tela cheia e amplia o balão (lupa) sem mudar as quebras de linha.
+ • Corrigido: texto grande virava um balão enorme numa linha só. Agora a largura automática vai
+   até 400 px e quebra a linha (imagens e tabelas largas continuam mandando na largura).
+ • Corrigido: "1. ", "- ", "# " e *asteriscos* digitados viravam lista/título/itálico no balão;
+   "R$ 10,00 e R$ 20,00" virava fórmula. Agora ficam exatamente como foram digitados.
+ • Barra "Largura": Automática ou Fixa (régua). "Altura se ajusta ao texto": desligue para manter
+   o balão alto (espaço para escrever com a S Pen). Botões de posição do texto (esquerda/meio/direita,
+   em cima/meio/embaixo).
+ • Barra de texto reorganizada: ↶ ↷ · B I U S (acendem quando ativos) · A− [tamanho] A+ (sem
+   selecionar, vale para a palavra do cursor) · cor da letra e marca-texto (toque repete a última
+   cor, ▾ abre a paleta com as cores rápidas) · listas com marcador e numerada · copiar/colar
+   estilo · emoji · 🖼️ inserir imagem do tablet · 📋 Colar limpo (cola só o texto e junta as
+   linhas quebradas de PDF) · 🔤 OCR aparece quando há imagem.
+ • 👁 Ver no balão: mostra o resultado final desenhado pelo mapa (útil para fórmulas).
+ • Fechar com alterações pergunta antes de descartar; "Sub-ramo" salva o texto antes de criar o
+   filho (antes ele se perdia); o teclado da tela não cobre mais a caixa.
+
+NOVO NA 12.7.1 — SAMSUNG NOTES COM O FUNDO DA PÁGINA
+ • Ao importar um .sdocx, cada página agora vem com o fundo que tinha no Samsung Notes:
+   a página do PDF/slide sobre a qual você escreveu e a cor da página. Antes vinham só os traços
+   e as imagens coladas (o fundo ficava transparente).
+ • Vale para as três formas de importar: no quadro, dentro de um balão como vetor e como imagem.
+ • Nova opção na janela de importação: "Fundo da página (PDF/cor)" (ligada por padrão).
+ • Corrigido: imagens cujo número interno difere do nome do arquivo agora são encontradas.
+
+NOVO NA 12.7.2 — SAMSUNG NOTES: AJUSTES
+ • As miniaturas da janela de importação mostram o fundo (cor e PDF) de cada página.
+ • Marca-texto importado volta a ser transparente (o texto marcado aparece por baixo). O app agora
+   lê a transparência da cor do traço: qualquer traço semitransparente vira marca-texto.
+ • Importar para dentro do balão: o balão fica do tamanho da página e o fundo passa a ser um
+   desenho preso ao balão JUNTO com os traços — ao mover ou redimensionar o balão, fundo e escrita
+   continuam alinhados. (Corrigido também o limite de 400 px da 12.7 que cortava a página.)
+ • Balões importados na 12.7.1 têm o fundo antigo: para corrigir, importe a página de novo.
+
+NOVO NA 12.7.3 — CONTEÚDO DO SAMSUNG NOTES PRESO AO BALÃO
+ • No modo Seleção, tocar/arrastar em cima do fundo ou dos traços importados agora pega o BALÃO
+   inteiro (arrasta tudo junto; toque duplo abre o editor). Não precisa mais mirar na borda.
+ • Para mexer só no conteúdo (mover, recortar, levar para outro balão): segure Alt — no tablet,
+   ligue o botão "⌥ Ramo". Caneta e borracha continuam funcionando normalmente sobre ele.
+ • O editor do balão mostra o fundo e os traços importados no lugar exato (só para ver; não são
+   editados ali). Se você digitar texto acima da página, eles acompanham.
+
+NOVO NA 12.7.4 - ATALHOS DE TAMANHO DA LETRA
+ • No editor do balão (com teclado): Ctrl+Shift+< diminui e Ctrl+Shift+> aumenta a letra
+   do trecho selecionado (sem seleção, vale para a palavra onde está o cursor).
+
+NOVO NA 12.7.5 - SAMSUNG NOTES: BALÕES FILHOS, ARRASTE E AGRUPAMENTO
+ • Importar para dentro do balão, seletor "Modo" com 3 opções:
+   1) Um balão filho (horizontal): pai → Pág. 1 → Pág. 2 → ... encadeados para a direita;
+   2) Um balão filho do outro (vertical): cada página filha da anterior, uma embaixo da outra;
+   3) Todos os balões filhos do mesmo pai: um embaixo do outro, partindo do mesmo ponto do pai.
+ • Corrigido o arraste do balão importado: clicar no balão agora move o balão inteiro junto com seu conteúdo.
+ • Tudo o que é importado de cada página do .sdocx (fundo, imagens e traços) vem agrupado para mover junto.
+   Para desagrupar (ou reagrupar): botão direito → "Desagrupar conteúdo importado" (ou botão Desagrupar / Ctrl+Shift+G).
+ • Para levar só o conteúdo do balão (importado do sdocx ou imagem): segure Alt (no tablet: "⌥ Ramo"),
+   clique no interior do balão e arraste.
+
+NOVO NA 12.7.6 — EXCLUSÃO INTELIGENTE + CANETA E CAIXA DE TEXTO NO EDITOR DO BALÃO
+ • Ao apagar um balão intermediário conectado (ex.: 1 → 2 → 3 → 4), abre uma caixa perguntando:
+   1) Apagar e tornar os balões seguintes órfãos (1     3 → 4…)
+   2) Apagar, conectando os seguintes ao anterior (1 → 3 → 4…)
+   3) Apagar o ramo inteiro (este balão + seguintes)
+ • No modo editor do balão: botões 🖊️ Caneta, 🖍️ Marca-texto e 🧹 Borracha para escrever direto
+   dentro do editor, ancorando automaticamente ao fundo (.sdocx / balão).
+ • Botão "🔤 + Caixa de texto" no editor do balão: insere caixas de texto flexíveis que podem ser
+   arrastadas para qualquer posição, redimensionadas em largura/altura e permanecem ancoradas ao
+   fundo para acompanhar o balão ao arrastá-lo no mapa.
+
+NOVO NA 12.15 — TABLET EM DIA COM O DESKTOP 12.15
+ • Esta versão traz para o tablet tudo o que entrou no desktop da 12.8 à 12.15, mantendo a camada
+   do tablet (toque, pinça, S Pen com botão-borracha, palma ignorada, barra inferior, PWA offline).
+ • Samsung Notes (.sdocx): leitura mais fiel de canetas × marca-textos, realces largos não tampam
+   mais o texto, seletor de páginas em janela flutuante e redimensionável, opção "Traço sdocx:
+   Calibrado / Fiel" na barra.
+ • Desempenho com mapas grandes: só os desenhos visíveis ficam montados na tela, o arraste não refaz
+   a lista de desenhos a cada quadro, PDF de fundo sob demanda e, abaixo de 8% de zoom, só o fundo
+   das páginas é desenhado. Menos memória após abrir arquivos grandes.
+ • Painel "🗂️ Camadas" (filtro de seleção por camada: balões, vetores, imagens, fundo, caixas de
+   texto, conectores) e caixa única com 8 alças para vetores.
+ • Recortar/colar/apagar balões conectados com as 3 opções (órfãos / reconectar / ramo inteiro).
+ • Editor do balão: desfazer/refazer do texto e modo "⬚ Vetores" (selecionar, desagrupar, mover,
+   esticar ou achatar o que foi importado do .sdocx).
+ • "Salvar HTML" usa uma cópia limpa do código guardada no próprio arquivo; ao abrir um arquivo,
+   ele não aparece mais como "Não salvo" sem você ter mexido. Backup automático ao sair do app.
+ • Projeto compacto (.mmapz).
+ • O arquivo index.html ficou maior (~8,8 MB) porque leva as bibliotecas e a cópia limpa do código
+   embutidas — funciona 100% sem internet.
