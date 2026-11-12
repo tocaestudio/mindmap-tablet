@@ -280,3 +280,15 @@ NOVO NA 12.15.2 — CANETA SEM TRAVADAS AO ESCREVER
    mão parar, grava compacto e oferece "Recuperar" em ⋯).
  • A cópia para o Desfazer agora espera a mão parar (0,7 s) em vez de rodar entre uma letra e outra.
    ↶ continua desfazendo traço por traço, mesmo tocado logo depois de escrever.
+
+NOVO NA 12.16 — SALVAR SIMPLES E MENOS MEMÓRIA
+ • Salvar ficou um só: 💾 grava o projeto compacto (.mmapz) na pasta Downloads. No menu Arquivo:
+   "Abrir… (.mmapz ou .json)", "Salvar", "Salvar como projeto compacto (.mmapz)" e "Salvar como JSON".
+   O .mmapz e o .json guardam exatamente o mesmo conteúdo; o .mmapz é comprimido (bem menor).
+   O HTML com o app dentro continua em Arquivo → Exportar, para enviar a quem não tem o app.
+ • Você também pode enviar um .mmapz para o app pelo "Compartilhar" do Android.
+ • Caneta: lápis, caneta técnica e marca-texto agora são desenhados ao vivo do mesmo jeito que a tinteiro
+   (forma preenchida), que era a única que acompanhava bem a ponta da S Pen. Para comparar com o modo
+   anterior: ⋯ → "⚡ Rascunho preenchido".
+ • Tinta compacta: os traços que não estão em uso ficam guardados de forma compacta na memória
+   (cerca de 5× menos). Cadernos grandes do Samsung Notes ocupam bem menos memória depois de abertos.
