@@ -305,3 +305,22 @@ NOVO NA 12.17 — CANETA COM ZOOM PRÓXIMO, CAMADAS À DIREITA, TRÊS CANETAS
  • Traço .sdocx "Fiel": pontas arredondadas no marca-texto e nas canetas.
  • Camadas de Seleção: o painel fica embutido na lateral direita; a seta ‹ › recolhe e expande.
  • Modo Mão: a pinça com dois dedos volta a dar zoom.
+
+NOVO NA 12.18 — TRAÇO GROSSO E ZOOM PRÓXIMO SEM LENTIDÃO; ESPESSURA FIXA
+ • A espessura do traço não depende mais do zoom: 5 px é sempre 5 px no mapa. Antes, com zoom afastado, o traço
+   era gravado mais grosso (até 4×) para parecer igual na tela — e ficava grosso demais ao aproximar.
+ • Caneta: a cada quadro só o PEDAÇO NOVO do traço é desenhado; nada é apagado e refeito. Pelo medidor 📊 da 12.17,
+   o tablet caía de ~90 para ~40 eventos/s quando a área refeita por quadro passava de ~10 mil pixels (traço grosso
+   ou zoom próximo). Agora essa área é só o pedaço novo (centenas a poucos milhares de pixels).
+ • Ao levantar a caneta nada é trocado: o que você desenhou fica na tela exatamente como está (sem piscar) e só
+   vira o traço definitivo quando a mão para. Se a forma mudar um pouco (a tinteiro afina no fim, o marca-texto
+   perde o gancho do começo), a mudança acontece nessa hora.
+ • Salvamento automático do tablet mais leve com cadernos grandes (não descompacta mais todos os traços).
+ • Aprendizado Ativo: o botão 🧠 que flutuava ao lado do balão saiu — use ⚙️ Opções → 🧠 Aprendizado ativo
+   (ou toque longo no balão). Ao gravar, a caixa encolhe numa pílula no canto (🧠 · tempo · ⏸ · ⏹):
+   ⏸ pausa (áudio e relógio), ⏹ para, salva e reabre a caixa; 🧠 reabre a caixa sem parar. Na caixa:
+   "🔇 Redução de ruído" com intensidade (leve / média / forte).
+ • Balão com gravação: pontinho vermelho discreto no canto de baixo à direita (toque abre a gravação) e o
+   botão ⚙️ Opções fica rosado.
+ • Ramo recolhido ("+N"): com mais de um nível escondido, tocar no "+N" pergunta: "▸ Abrir só o próximo"
+   (aparecem só os filhos diretos, cada um com o seu "+N") ou "▸▸ Abrir todos".
