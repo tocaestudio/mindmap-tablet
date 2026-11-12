@@ -324,3 +324,10 @@ NOVO NA 12.18 — TRAÇO GROSSO E ZOOM PRÓXIMO SEM LENTIDÃO; ESPESSURA FIXA
    botão ⚙️ Opções fica rosado.
  • Ramo recolhido ("+N"): com mais de um nível escondido, tocar no "+N" pergunta: "▸ Abrir só o próximo"
    (aparecem só os filhos diretos, cada um com o seu "+N") ou "▸▸ Abrir todos".
+
+NOVO NA 12.19 — AULA REPRODUZIDA COM A CAIXA ENCOLHIDA
+ • Ao tocar "▶ Reproduzir aula", a caixa do Aprendizado Ativo encolhe numa pílula AZUL no canto
+   (🧠 · tempo da aula / duração · ⏸ · ⏹), como na gravação (que é vermelha). A escrita da aula aparece no mapa.
+   ⏸ pausa a aula e a escrita fica parada na tela; ▶ continua; ⏹ para a aula e reabre a caixa;
+   🧠 reabre a caixa sem parar. Ao terminar a aula, a caixa reabre sozinha.
+ • Com a aula tocando e a caixa aberta, ✕ encolhe a caixa de novo (a aula continua).
