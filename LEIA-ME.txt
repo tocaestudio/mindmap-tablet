@@ -292,3 +292,16 @@ NOVO NA 12.16 — SALVAR SIMPLES E MENOS MEMÓRIA
    anterior: ⋯ → "⚡ Rascunho preenchido".
  • Tinta compacta: os traços que não estão em uso ficam guardados de forma compacta na memória
    (cerca de 5× menos). Cadernos grandes do Samsung Notes ocupam bem menos memória depois de abertos.
+
+NOVO NA 12.17 — CANETA COM ZOOM PRÓXIMO, CAMADAS À DIREITA, TRÊS CANETAS
+ • Caneta: cada traço que entrava no mapa fazia o tablet redesenhar aquele pedaço da página (PDF + escrita do
+   Samsung Notes); com zoom próximo isso ficava muito mais caro e a caneta atrasava. Agora o traço pronto fica
+   numa película por cima e só entra no mapa quando a mão para (0,7 s) ou quando você faz outra coisa
+   (mover, zoom, desfazer, borracha, selecionar). Para comparar: ⋯ → "🚀 Caneta rápida".
+ • Marca-texto e lápis: o rascunho não usa mais transparência/mistura na tela inteira (⋯ → "🎨 Rascunho sem
+   transparência no compositor"). Enquanto escreve o marca-texto aparece translúcido; ao soltar fica igual a antes.
+ • Canetas: ficaram Lápis, Caneta (espessura fixa, sem pressão) e Tinteiro, além do Marca-texto e do Laser.
+   Pincel e Tracejada saíram (traços antigos continuam como estavam).
+ • Traço .sdocx "Fiel": pontas arredondadas no marca-texto e nas canetas.
+ • Camadas de Seleção: o painel fica embutido na lateral direita; a seta ‹ › recolhe e expande.
+ • Modo Mão: a pinça com dois dedos volta a dar zoom.
